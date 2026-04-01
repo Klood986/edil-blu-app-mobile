@@ -1977,10 +1977,7 @@ function AppuntiCantiere({ user, projectId, projectName, onBack }) {
   useEffect(() => {
     if (!projectId) return;
     const unsub = onSnapshot(
-      query(
-        collection(db, `projects/${projectId}/appunti_cantiere`),
-        where("autorId", "==", user.uid)
-      ),
+      query(collection(db, 'appunti_cantiere'), where("autorId", "==", user.uid), where("projectId", "==", projectId)),
       s => {
         const docs = s.docs.map(d => ({ id: d.id, ...d.data() }));
         docs.sort((a, b) => {
@@ -1999,18 +1996,18 @@ function AppuntiCantiere({ user, projectId, projectName, onBack }) {
   const inviaNotifica = async (tipo, categoria) => {
     try {
       // Legge admin e tecnici
-      const snap = await getDocs(
-        query(collection(db, "utenti"),
-          where("ruolo", "in", ["admin", "ufficio_tecnico"]))
-      );
+      const snap = await getDocs(collection(db, "utenti"));
       const destinatari = snap.docs
         .map(d => ({ id: d.id, ...d.data() }))
-        .filter(u => u.uid !== user.uid);
+        .filter(u => {
+          const ruolo = u.ruoloApp || u.ruolo || "";
+          return ["admin","ufficio_tecnico","amministrazione"].includes(ruolo) && (u.uid || u.id) !== user.uid;
+        });
 
       const tipoLabel = tipo === "nota" ? "nota" : tipo === "foto" ? "foto" : "checklist";
       await Promise.all(destinatari.map(dest =>
         addDoc(collection(db, "notifiche"), {
-          userId: dest.uid || dest.id,
+          userId: dest.uid || dest.id || dest.email,
           tipo: "appunto",
           testo: `${user.nome} ha aggiunto una ${tipoLabel} (${categoria}) su ${projectName}`,
           projectId,
@@ -2078,7 +2075,7 @@ function AppuntiCantiere({ user, projectId, projectName, onBack }) {
     if (!canSalva()) return;
     setSaving(true);
     try {
-      await addDoc(collection(db, `projects/${projectId}/appunti_cantiere`), {
+      await addDoc(collection(db, 'appunti_cantiere'), {
         tipo: tipoForm,
         categoria: form.categoria,
         testo: form.testo.trim(),
