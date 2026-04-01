@@ -2028,7 +2028,7 @@ function AppuntiCantiere({ user, projectId, projectName, onBack }) {
       console.log("Upload foto:", file.name, file.size, file.type);
       // Percorso semplificato senza sottocartelle
       const nomefile = Date.now() + "_" + file.name.replace(/[^a-zA-Z0-9._]/g, "_");
-      const r = ref(storage, "appunti_cantiere/" + nomefile);
+      const r = ref(storage, `appunti/${projectId}/${nomefile}`);
       console.log("Percorso storage:", r.fullPath);
       const snap = await uploadBytes(r, file);
       console.log("Upload completato:", snap.metadata.fullPath);
@@ -2099,7 +2099,7 @@ function AppuntiCantiere({ user, projectId, projectName, onBack }) {
 
   const toggleChecklistItem = async (appunto, idx) => {
     const nuova = appunto.checklist.map((v, i) => i === idx ? { ...v, fatto: !v.fatto } : v);
-    await updateDoc(doc(db, `projects/${projectId}/appunti_cantiere`, appunto.id), {
+    await updateDoc(doc(db, 'appunti_cantiere', appunto.id), {
       checklist: nuova, updatedAt: serverTimestamp(),
     });
     // Aggiorna anche nel modal aperto
@@ -2111,7 +2111,7 @@ function AppuntiCantiere({ user, projectId, projectName, onBack }) {
   const eliminaAppunto = async (id) => {
     if (!window.confirm("Eliminare questo appunto?")) return;
     const { deleteDoc: dd, doc: d2 } = await import("firebase/firestore");
-    await dd(d2(db, `projects/${projectId}/appunti_cantiere`, id));
+    await dd(d2(db, 'appunti_cantiere', id));
     if (appuntoAperto?.id === id) setAppuntoAperto(null);
   };
 
