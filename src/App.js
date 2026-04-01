@@ -851,6 +851,16 @@ function Cantieri({ user }) {
             <LavorazioniPreventivo projectId={sel.id} />
           )}
 
+          {/* APPUNTI */}
+          {tab === "appunti" && (
+            <AppuntiCantiere
+              user={user}
+              projectId={sel.id}
+              projectName={sel.clientName || sel.name}
+              onBack={() => setTab("anagrafica")}
+            />
+          )}
+
           {/* DISEGNI */}
           {tab==="disegni" && (
             <>
