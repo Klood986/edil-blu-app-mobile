@@ -705,8 +705,8 @@ function Cantieri({ user }) {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
             <div style={{ flex:1 }}>
               {sel.code && <div style={{ fontSize:10, color:C.accent, fontWeight:700, letterSpacing:1, marginBottom:4 }}>{sel.code}</div>}
-              <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:22 }}>{sel.name}</div>
-              <div style={{ fontSize:13, color:C.textDim, marginTop:2 }}>{sel.clientName}</div>
+              <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:22 }}>{sel.clientName || sel.name}</div>
+              {sel.name && sel.name !== sel.clientName && <div style={{ fontSize:12, color:C.accent, marginTop:2 }}>{sel.name}</div>}
             </div>
             <span style={{ background:`${STATUS_COLOR[sel.status]||C.textMuted}20`, color:STATUS_COLOR[sel.status]||C.textMuted, border:`1px solid ${STATUS_COLOR[sel.status]||C.textMuted}40`, borderRadius:6, padding:"3px 10px", fontSize:10, fontWeight:700, flexShrink:0, marginTop:4 }}>
               {STATUS_LABEL[sel.status]||sel.status}
@@ -2385,11 +2385,41 @@ function AppuntiCantiere({ user, projectId, projectName, onBack }) {
 }
 
 
+
+// ─── HUB APPUNTI (seleziona cantiere) ────────────────────────────────────────
+function AppuntiHub({ user, onSelect }) {
+  const [cantieri, setCantieri] = useState([]);
+  useEffect(() => {
+    getDocs(query(collection(db,"projects"),where("status","in",["active","draft"])))
+      .then(s => setCantieri(s.docs.map(d => ({id:d.id,...d.data()}))));
+  }, []);
+  return (
+    <div style={{ padding:"16px 16px 80px" }} className="fu">
+      <div style={{ fontSize:10, fontWeight:800, color:C.textMuted, letterSpacing:2, textTransform:"uppercase", marginBottom:14 }}>Seleziona cantiere</div>
+      {cantieri.length===0 && <Empty icon="🏗" msg="Nessun cantiere attivo" />}
+      {cantieri.map(c => (
+        <div key={c.id} onClick={() => onSelect(c)}
+          style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:"14px 16px", marginBottom:8, cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}
+          onTouchStart={e => e.currentTarget.style.opacity="0.8"}
+          onTouchEnd={e => e.currentTarget.style.opacity="1"}>
+          <div style={{ width:40, height:40, borderRadius:10, background:C.accentDim, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>📷</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontWeight:700, fontSize:15 }}>{c.clientName || c.name}</div>
+            {c.address && <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>📍 {c.address}</div>}
+          </div>
+          <span style={{ color:C.accent, fontSize:20 }}>›</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState("dashboard");
   const [altroOpen, setAltroOpen] = useState(false);
+  const [appuntiCantiere, setAppuntiCantiere] = useState(null);
   const [stats, setStats] = useState({ cantieri:0, operai:0, ferie:0, rap:0 });
 
   useEffect(() => {
@@ -2411,11 +2441,16 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     Promise.all([
-      getDocs(collection(db,"cantieri")),
-      getDocs(query(collection(db,"utenti"),where("ruolo","==","operaio"))),
+      getDocs(query(collection(db,"projects"),where("status","in",["active","draft"]))),
+      getDocs(collection(db,"utenti")),
       getDocs(query(collection(db,"ferie"),where("stato","==","in attesa"))),
-      getDocs(collection(db,"rapportini")),
-    ]).then(([c,o,f,r]) => setStats({ cantieri:c.size, operai:o.size, ferie:f.size, rap:r.size }));
+      getDocs(query(collection(db,"timesheets"),where("status","==","submitted"))),
+    ]).then(([c,o,f,r]) => setStats({
+      cantieri: c.size,
+      operai: o.docs.filter(d => ["operaio","worker"].includes(d.data().ruolo||d.data().ruoloApp||"")).length,
+      ferie: f.size,
+      rap: r.size
+    }));
   }, [user]);
 
   if (loading) return (
@@ -2440,10 +2475,11 @@ export default function App() {
     { id:"cronoprogramma", icon:"📅", label:"Cronoprogramma" },
     { id:"procedure",      icon:"📋", label:"Procedure" },
     { id:"regolamento",    icon:"📜", label:"Regolamento" },
+    { id:"appunti_hub",    icon:"📷", label:"Appunti cantiere" },
     ...(isManager(user.ruolo)?[{ id:"gestione", icon:"⚙", label:"Gestione" }]:[]),
   ];
 
-  const titles = { dashboard:"Dashboard", cantieri:"Cantieri", chat:"Chat", personale:"Area Personale", cronoprogramma:"Cronoprogramma", procedure:"Procedure", regolamento:"Regolamento", gestione:"Gestione" };
+  const titles = { dashboard:"Dashboard", cantieri:"Cantieri", chat:"Chat", personale:"Area Personale", cronoprogramma:"Cronoprogramma", procedure:"Procedure", regolamento:"Regolamento", gestione:"Gestione", appunti_hub:"Appunti cantiere" };
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, color:C.text, fontFamily:"Barlow,sans-serif", maxWidth:480, margin:"0 auto" }}>
@@ -2474,6 +2510,8 @@ export default function App() {
       {section==="procedure"      && <Procedure user={user} />}
       {section==="regolamento"    && <Regolamento user={user} />}
       {section==="gestione"       && <Gestione user={user} />}
+      {section==="appunti_hub"    && !appuntiCantiere && <AppuntiHub user={user} onSelect={c => setAppuntiCantiere(c)} />}
+      {section==="appunti_hub"    && appuntiCantiere && <AppuntiCantiere user={user} projectId={appuntiCantiere.id} projectName={appuntiCantiere.clientName||appuntiCantiere.name} onBack={() => setAppuntiCantiere(null)} />}
 
       {/* Menu Altro */}
       {altroOpen && (
@@ -2495,7 +2533,7 @@ export default function App() {
         {navItems.map(n => {
           const active = n.id==="altro" ? altroItems.map(i=>i.id).includes(section) : section===n.id;
           return (
-            <button key={n.id} onClick={()=>n.id==="altro"?setAltroOpen(!altroOpen):setSection(n.id)}
+            <button key={n.id} onClick={()=>n.id==="altro"?setAltroOpen(!altroOpen):(setSection(n.id),setAppuntiCantiere(null))}
               style={{ flex:1, padding:"10px 0 8px", background:"none", border:"none", color:active?C.accent:C.textMuted, fontSize:9, fontWeight:active?800:500, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, borderTop:`2px solid ${active?C.accent:"transparent"}`, fontFamily:"Barlow", letterSpacing:0.3, textTransform:"uppercase" }}>
               <span style={{ fontSize:20 }}>{n.icon}</span>
               {n.label}
