@@ -2028,15 +2028,27 @@ function AppuntiCantiere({ user, projectId, projectName, onBack }) {
     if (!file) return;
     setUploading(true);
     try {
-      const r = ref(storage, `projects/${projectId}/appunti/${Date.now()}_${file.name}`);
-      await uploadBytes(r, file);
+      console.log("Upload foto:", file.name, file.size, file.type);
+      // Percorso semplificato senza sottocartelle
+      const nomefile = Date.now() + "_" + file.name.replace(/[^a-zA-Z0-9._]/g, "_");
+      const r = ref(storage, "appunti_cantiere/" + nomefile);
+      console.log("Percorso storage:", r.fullPath);
+      const snap = await uploadBytes(r, file);
+      console.log("Upload completato:", snap.metadata.fullPath);
       const url = await getDownloadURL(r);
+      console.log("URL ottenuto:", url.substring(0, 60));
       setForm(p => ({ ...p, fotoUrl: url, testo: "" }));
       setTipoForm("foto");
       setShowForm(true);
     } catch (err) {
-      console.error(err);
-      alert("Errore nel caricamento foto. Riprova.");
+      console.error("Errore upload foto:", err.code, err.message);
+      if (err.code === "storage/unauthorized") {
+        alert("Permesso negato. Contatta l admin per abilitare l upload foto.");
+      } else if (err.code === "storage/canceled") {
+        alert("Upload annullato. Riprova.");
+      } else {
+        alert("Errore: " + (err.message || "Riprova"));
+      }
     }
     setUploading(false);
     e.target.value = "";
