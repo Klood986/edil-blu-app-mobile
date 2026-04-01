@@ -675,6 +675,7 @@ function Cantieri({ user }) {
   };
 
   const [fasi, setFasi] = useState([]);
+  const [mostraAppunti, setMostraAppunti] = useState(false);
 
   useEffect(() => {
     if (!sel) return;
@@ -694,7 +695,7 @@ function Cantieri({ user }) {
   const mapsUrl = (address) => address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : null;
 
   if (sel) {
-    const tabsCantiere = ["anagrafica","contatti","lavorazioni","disegni"];
+    const tabsCantiere = ["anagrafica","contatti","lavorazioni","appunti","disegni"];
     const disFiltrati = disegni.filter(d => d.categoria === disTab);
     return (
       <div style={{ paddingBottom:80 }} className="fu">
@@ -720,7 +721,7 @@ function Cantieri({ user }) {
             {tabsCantiere.map(t => (
               <button key={t} onClick={()=>setTab(t)}
                 style={{ flex:"0 0 auto", padding:"10px 14px", background:"none", border:"none", borderBottom:`2px solid ${tab===t?C.accent:"transparent"}`, color:tab===t?C.accent:C.textMuted, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"Barlow", textTransform:"uppercase", letterSpacing:0.5, whiteSpace:"nowrap" }}>
-                {t==="fasi"?"Lavorazioni":t}
+                {t==="fasi"?"Lavorazioni":t==="appunti"?"Appunti":t}
               </button>
             ))}
           </div>
@@ -1931,6 +1932,363 @@ function NotificheCampana({ user }) {
 }
 
 // ─── APP ROOT ─────────────────────────────────────────────────────────────────
+// ─── APPUNTI CANTIERE ─────────────────────────────────────────────────────────
+// Da inserire in App.js prima di export default function App()
+// Salva su Firestore: projects/{projectId}/appunti_cantiere
+// Stesso schema dell'ERP desktop per sincronizzazione automatica
+
+function AppuntiCantiere({ user, projectId, projectName, onBack }) {
+  const [appunti, setAppunti] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [filtroTipo, setFiltroTipo] = useState("tutti");
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef();
+
+  const [form, setForm] = useState({
+    tipo: "nota",
+    categoria: "Generale",
+    testo: "",
+    checklist: [],
+    fotoUrl: "",
+  });
+  const [nuovaVoce, setNuovaVoce] = useState("");
+
+  const CATEGORIE = ["Generale","Sicurezza","Materiali","Contabilita","Subappalti","Clienti","Altro"];
+  const TIPI = [
+    { id:"tutti", label:"Tutti", icon:"📋" },
+    { id:"nota",  label:"Note",  icon:"📝" },
+    { id:"checklist", label:"Checklist", icon:"✅" },
+    { id:"foto",  label:"Foto",  icon:"📷" },
+  ];
+
+  const catColor = {
+    Generale:    C.accent,
+    Sicurezza:   C.red,
+    Materiali:   C.green,
+    Contabilita: C.gold,
+    Subappalti:  "#a78bfa",
+    Clienti:     "#38bdf8",
+    Altro:       C.textMuted,
+  };
+
+  useEffect(() => {
+    if (!projectId) return;
+    const unsub = onSnapshot(
+      collection(db, `projects/${projectId}/appunti_cantiere`),
+      s => {
+        const docs = s.docs.map(d => ({ id: d.id, ...d.data() }));
+        docs.sort((a, b) => {
+          const ta = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0;
+          const tb = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0;
+          return tb - ta;
+        });
+        setAppunti(docs);
+        setLoading(false);
+      }
+    );
+    return unsub;
+  }, [projectId]);
+
+  const uploadFoto = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const r = ref(storage, `projects/${projectId}/appunti/${Date.now()}_${file.name}`);
+      await uploadBytes(r, file);
+      const url = await getDownloadURL(r);
+      setForm(p => ({ ...p, fotoUrl: url, tipo: "foto" }));
+    } catch (err) { console.error(err); }
+    setUploading(false);
+    e.target.value = "";
+  };
+
+  const aggiungiVoce = () => {
+    if (!nuovaVoce.trim()) return;
+    setForm(p => ({ ...p, checklist: [...p.checklist, { testo: nuovaVoce.trim(), fatto: false }] }));
+    setNuovaVoce("");
+  };
+
+  const toggleVoce = (i) => {
+    setForm(p => ({
+      ...p,
+      checklist: p.checklist.map((v, j) => j === i ? { ...v, fatto: !v.fatto } : v)
+    }));
+  };
+
+  const removeVoce = (i) => {
+    setForm(p => ({ ...p, checklist: p.checklist.filter((_, j) => j !== i) }));
+  };
+
+  const salva = async () => {
+    if (form.tipo === "nota" && !form.testo.trim()) return;
+    if (form.tipo === "checklist" && form.checklist.length === 0) return;
+    if (form.tipo === "foto" && !form.fotoUrl) return;
+
+    await addDoc(collection(db, `projects/${projectId}/appunti_cantiere`), {
+      tipo: form.tipo,
+      categoria: form.categoria,
+      testo: form.testo.trim(),
+      checklist: form.checklist,
+      fotoUrl: form.fotoUrl,
+      autore: user.nome,
+      autorId: user.uid,
+      projectId,
+      projectName,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+
+    setForm({ tipo:"nota", categoria:"Generale", testo:"", checklist:[], fotoUrl:"" });
+    setNuovaVoce("");
+    setShowForm(false);
+  };
+
+  const toggleChecklistItem = async (appunto, idx) => {
+    const nuova = appunto.checklist.map((v, i) => i === idx ? { ...v, fatto: !v.fatto } : v);
+    await updateDoc(doc(db, `projects/${projectId}/appunti_cantiere`, appunto.id), {
+      checklist: nuova,
+      updatedAt: serverTimestamp(),
+    });
+  };
+
+  const eliminaAppunto = async (id) => {
+    if (!window.confirm("Eliminare questo appunto?")) return;
+    const { deleteDoc: dd, doc: d2 } = await import("firebase/firestore");
+    await dd(d2(db, `projects/${projectId}/appunti_cantiere`, id));
+  };
+
+  const appuntiFiltrati = filtroTipo === "tutti"
+    ? appunti
+    : appunti.filter(a => a.tipo === filtroTipo);
+
+  const fmtData = (ts) => {
+    if (!ts?.toDate) return "";
+    return ts.toDate().toLocaleDateString("it-IT", { day:"numeric", month:"short", hour:"2-digit", minute:"2-digit" });
+  };
+
+  return (
+    <div style={{ paddingBottom: 80 }} className="fu">
+      {/* Header */}
+      <div style={{ background:`linear-gradient(135deg,${C.mid},${C.blue}40)`, padding:"14px 16px 0", borderBottom:`1px solid ${C.border}` }}>
+        <button onClick={onBack} style={{ background:"none", border:"none", color:C.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow", marginBottom:8 }}>
+          ← {projectName}
+        </button>
+        <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:20, marginBottom:12 }}>
+          Appunti cantiere
+        </div>
+        {/* Filtri tipo */}
+        <div style={{ display:"flex", gap:6, overflowX:"auto", paddingBottom:0 }}>
+          {TIPI.map(t => (
+            <button key={t.id} onClick={() => setFiltroTipo(t.id)}
+              style={{ flex:"0 0 auto", padding:"8px 14px", background:"none", border:"none",
+                borderBottom:`2px solid ${filtroTipo===t.id?C.accent:"transparent"}`,
+                color:filtroTipo===t.id?C.accent:C.textMuted, fontSize:11, fontWeight:700,
+                cursor:"pointer", fontFamily:"Barlow", whiteSpace:"nowrap" }}>
+              {t.icon} {t.label}
+              {t.id !== "tutti" && (
+                <span style={{ marginLeft:4, fontSize:10, color:filtroTipo===t.id?C.accent:C.textMuted }}>
+                  ({appunti.filter(a => a.tipo === t.id).length})
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ padding:"14px 16px" }}>
+        {/* Bottone aggiungi */}
+        <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+          <button onClick={() => { setForm(p => ({...p, tipo:"nota"})); setShowForm(true); }}
+            style={{ flex:1, background:C.accentDim, border:`1px solid ${C.accent}40`, borderRadius:10, padding:"10px", fontSize:12, fontWeight:700, color:C.accent, cursor:"pointer", fontFamily:"Barlow" }}>
+            📝 Nota
+          </button>
+          <button onClick={() => { setForm(p => ({...p, tipo:"checklist"})); setShowForm(true); }}
+            style={{ flex:1, background:C.greenDim, border:`1px solid ${C.green}40`, borderRadius:10, padding:"10px", fontSize:12, fontWeight:700, color:C.green, cursor:"pointer", fontFamily:"Barlow" }}>
+            ✅ Checklist
+          </button>
+          <button onClick={() => fileRef.current.click()}
+            style={{ flex:1, background:C.goldDim, border:`1px solid ${C.gold}40`, borderRadius:10, padding:"10px", fontSize:12, fontWeight:700, color:C.gold, cursor:"pointer", fontFamily:"Barlow" }}>
+            {uploading ? "..." : "📷 Foto"}
+          </button>
+          <input ref={fileRef} type="file" accept="image/*" capture="environment"
+            onChange={e => { uploadFoto(e).then(() => setShowForm(true)); }}
+            style={{ display:"none" }} />
+        </div>
+
+        {/* Lista appunti */}
+        {loading && <div style={{ textAlign:"center", color:C.textMuted, padding:32 }}>Caricamento...</div>}
+        {!loading && appuntiFiltrati.length === 0 && (
+          <div style={{ textAlign:"center", padding:"48px 0", color:C.textMuted }}>
+            <div style={{ fontSize:40, marginBottom:12 }}>📋</div>
+            <div style={{ fontSize:14 }}>Nessun appunto ancora</div>
+            <div style={{ fontSize:12, marginTop:6 }}>Aggiungi note, checklist o foto dal cantiere</div>
+          </div>
+        )}
+
+        {appuntiFiltrati.map(a => {
+          const col = catColor[a.categoria] || C.accent;
+          const canDel = a.autorId === user.uid || user.ruolo === "admin";
+          return (
+            <div key={a.id} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:12, marginBottom:10, overflow:"hidden", borderLeft:`3px solid ${col}` }}>
+              {/* Header card */}
+              <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 14px 8px" }}>
+                <span style={{ fontSize:16 }}>
+                  {a.tipo==="nota"?"📝":a.tipo==="checklist"?"✅":"📷"}
+                </span>
+                <span style={{ fontSize:9, padding:"2px 6px", borderRadius:3, fontWeight:700, background:`${col}20`, color:col }}>
+                  {a.categoria}
+                </span>
+                <span style={{ fontSize:10, color:C.textMuted, marginLeft:"auto" }}>
+                  {a.autore} · {fmtData(a.createdAt)}
+                </span>
+                {canDel && (
+                  <button onClick={() => eliminaAppunto(a.id)}
+                    style={{ background:"none", border:"none", color:C.textMuted, fontSize:14, cursor:"pointer", padding:"0 0 0 4px" }}>
+                    🗑
+                  </button>
+                )}
+              </div>
+
+              {/* Contenuto */}
+              <div style={{ padding:"0 14px 12px" }}>
+                {/* NOTA */}
+                {a.tipo === "nota" && a.testo && (
+                  <div style={{ fontSize:14, color:C.text, lineHeight:1.7, whiteSpace:"pre-wrap" }}>
+                    {a.testo}
+                  </div>
+                )}
+
+                {/* FOTO */}
+                {a.tipo === "foto" && a.fotoUrl && (
+                  <div>
+                    <img src={a.fotoUrl} alt="foto cantiere"
+                      style={{ width:"100%", borderRadius:8, maxHeight:240, objectFit:"cover", display:"block" }} />
+                    {a.testo && (
+                      <div style={{ fontSize:12, color:C.textDim, marginTop:8, lineHeight:1.5 }}>{a.testo}</div>
+                    )}
+                  </div>
+                )}
+
+                {/* CHECKLIST */}
+                {a.tipo === "checklist" && (
+                  <div>
+                    {a.testo && (
+                      <div style={{ fontSize:13, color:C.textDim, marginBottom:8 }}>{a.testo}</div>
+                    )}
+                    {(a.checklist || []).map((v, i) => (
+                      <div key={i} onClick={() => toggleChecklistItem(a, i)}
+                        style={{ display:"flex", alignItems:"center", gap:10, padding:"7px 0",
+                          borderBottom:`1px solid ${C.border}40`, cursor:"pointer" }}>
+                        <div style={{ width:20, height:20, borderRadius:5, flexShrink:0,
+                          border:`2px solid ${v.fatto?C.green:C.border}`,
+                          background:v.fatto?C.green:"transparent",
+                          display:"flex", alignItems:"center", justifyContent:"center" }}>
+                          {v.fatto && <span style={{ color:"#000", fontSize:11, fontWeight:800 }}>✓</span>}
+                        </div>
+                        <span style={{ fontSize:13, color:v.fatto?C.textMuted:C.text,
+                          textDecoration:v.fatto?"line-through":"none", flex:1 }}>
+                          {v.testo}
+                        </span>
+                      </div>
+                    ))}
+                    {/* Progresso checklist */}
+                    {(a.checklist || []).length > 0 && (
+                      <div style={{ marginTop:8 }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", fontSize:10, color:C.textMuted, marginBottom:3 }}>
+                          <span>Completate</span>
+                          <span style={{ color:C.green, fontWeight:700 }}>
+                            {a.checklist.filter(v=>v.fatto).length}/{a.checklist.length}
+                          </span>
+                        </div>
+                        <div style={{ height:3, borderRadius:2, background:`${C.border}80`, overflow:"hidden" }}>
+                          <div style={{ height:"100%", borderRadius:2, background:C.green,
+                            width:`${Math.round(a.checklist.filter(v=>v.fatto).length/a.checklist.length*100)}%`,
+                            transition:"width .3s" }} />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* MODAL AGGIUNGI */}
+      {showForm && (
+        <Modal title={form.tipo==="nota"?"Nuova nota":form.tipo==="checklist"?"Nuova checklist":"Nuova foto"} onClose={() => setShowForm(false)}>
+
+          {/* Categoria */}
+          <div style={{ fontSize:10, color:C.textMuted, fontWeight:700, marginBottom:6 }}>CATEGORIA</div>
+          <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
+            {CATEGORIE.map(cat => (
+              <button key={cat} onClick={() => setForm(p => ({...p, categoria:cat}))}
+                style={{ padding:"5px 10px", fontSize:11, fontWeight:700, borderRadius:20, cursor:"pointer",
+                  border:`1px solid ${form.categoria===cat?catColor[cat]+"60":C.border}`,
+                  background:form.categoria===cat?`${catColor[cat]}20`:"transparent",
+                  color:form.categoria===cat?catColor[cat]:C.textMuted, fontFamily:"Barlow" }}>
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* Anteprima foto */}
+          {form.tipo === "foto" && form.fotoUrl && (
+            <img src={form.fotoUrl} alt="preview"
+              style={{ width:"100%", borderRadius:8, maxHeight:200, objectFit:"cover", marginBottom:10 }} />
+          )}
+
+          {/* Testo/descrizione */}
+          <Txta
+            placeholder={form.tipo==="foto"?"Descrizione foto (opzionale)...":form.tipo==="checklist"?"Titolo checklist (opzionale)...":"Scrivi la tua nota..."}
+            value={form.testo}
+            onChange={e => setForm(p => ({...p, testo:e.target.value}))}
+            rows={form.tipo==="nota"?4:2}
+          />
+
+          {/* Voci checklist */}
+          {form.tipo === "checklist" && (
+            <div>
+              {form.checklist.map((v, i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                  <div style={{ width:18, height:18, borderRadius:4, border:`2px solid ${C.border}`, background:"transparent", flexShrink:0 }} />
+                  <span style={{ flex:1, fontSize:13, color:C.text }}>{v.testo}</span>
+                  <button onClick={() => removeVoce(i)}
+                    style={{ background:"none", border:"none", color:C.textMuted, fontSize:16, cursor:"pointer" }}>✕</button>
+                </div>
+              ))}
+              <div style={{ display:"flex", gap:8 }}>
+                <input value={nuovaVoce} onChange={e => setNuovaVoce(e.target.value)}
+                  onKeyDown={e => e.key==="Enter" && aggiungiVoce()}
+                  placeholder="Aggiungi voce..."
+                  style={{ flex:1, background:`${C.mid}40`, border:`1px solid ${C.border}`, borderRadius:8,
+                    color:C.text, padding:"8px 12px", fontSize:13, outline:"none", fontFamily:"Barlow" }} />
+                <button onClick={aggiungiVoce}
+                  style={{ background:C.accentDim, border:`1px solid ${C.accent}40`, borderRadius:8,
+                    color:C.accent, padding:"8px 14px", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                  +
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ height:16 }} />
+          <Btn label="✓ Salva appunto" onClick={salva}
+            disabled={
+              (form.tipo==="nota" && !form.testo.trim()) ||
+              (form.tipo==="checklist" && form.checklist.length===0) ||
+              (form.tipo==="foto" && !form.fotoUrl)
+            } />
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
