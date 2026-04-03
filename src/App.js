@@ -2509,6 +2509,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
   const [scalaPunti, setScalaPunti] = useState([]); // i 2 punti usati per la scala
   const [scalaMetri, setScalaMetri] = useState(0); // misura reale inserita
   const [dragScala, setDragScala] = useState(null); // { pointIndex }
+  const [scalaConfermata, setScalaConfermata] = useState(false); // true = nasconde punti scala
 
   // Misure e punti
   const [misure, setMisure] = useState([]);
@@ -2516,6 +2517,8 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
   const [selectedMisura, setSelectedMisura] = useState(null);
   const [dragHandle, setDragHandle] = useState(null); // { id, pointIndex }
   const dragMisuraRef = useRef(null); // { id, startPunti, startTouch }
+  const [magnifier, setMagnifier] = useState(null); // { x, y } coordinate schermo per lente
+  const magnifierTimer = useRef(null);
 
   // Touch state
   const touchRef = useRef({ startPos:null, startOffset:null, startDist:0, startZoom:1, moved:false, lastTap:0 });
@@ -2783,8 +2786,8 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       ctx.restore();
     }
 
-    // Punti scala sul canvas (trascinabili)
-    if (scalaPunti.length === 2) {
+    // Punti scala sul canvas (trascinabili, nascosti dopo Accetta)
+    if (scalaPunti.length === 2 && !scalaConfermata) {
       ctx.save();
       ctx.translate(offset.x, offset.y);
       ctx.scale(zoom, zoom);
@@ -2934,13 +2937,16 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       moved: false,
     };
 
-    // Check drag punti scala
-    if (scalaPunti.length === 2) {
+    // Check drag punti scala (solo se non confermata)
+    if (scalaPunti.length === 2 && !scalaConfermata) {
       const pt = screenToImg(t.clientX, t.clientY);
       const scalaThreshold = 44 / zoom;
       for (let i = 0; i < 2; i++) {
         if (distPx(pt, scalaPunti[i]) < scalaThreshold) {
           setDragScala({ pointIndex: i });
+          magnifierTimer.current = setTimeout(() => {
+            setMagnifier({ x: t.clientX, y: t.clientY });
+          }, 400);
           touchRef.current.moved = true;
           return;
         }
@@ -2957,6 +2963,10 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
         for (let i = 0; i < m.punti.length; i++) {
           if (distPx(pt, m.punti[i]) < threshold) {
             setDragHandle({ id: m.id, pointIndex: i });
+            // Attiva lente dopo 400ms di pressione
+            magnifierTimer.current = setTimeout(() => {
+              setMagnifier({ x: t.clientX, y: t.clientY });
+            }, 400);
             touchRef.current.moved = true;
             return;
           }
@@ -3029,6 +3039,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
         setScalaPunti(prev => {
           const np = [...prev]; np[ds.pointIndex] = pt; return np;
         });
+        setMagnifier({ x: t.clientX, y: t.clientY });
         touchRef.current.moved = true;
         return;
       }
@@ -3041,6 +3052,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
           const np = [...m.punti]; np[dh.pointIndex] = pt;
           return { ...m, punti: np };
         }));
+        setMagnifier({ x: t.clientX, y: t.clientY });
         touchRef.current.moved = true;
         return;
       }
@@ -3084,6 +3096,8 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
   function onTouchEnd(e) {
     lastPinchDist.current = null;
     lastPinchCenter.current = null;
+    if (magnifierTimer.current) { clearTimeout(magnifierTimer.current); magnifierTimer.current = null; }
+    setMagnifier(null);
 
     // Ricalcola scala dopo drag punto scala
     if (dragScala) {
@@ -3183,10 +3197,13 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       const pts = [...puntiCorrente, pt];
       setPuntiCorrente(pts);
       if (pts.length === 3) {
-        const gradi = calcolaAngolo(pts[0], pts[1], pts[2]);
+        // pts[0]=vertice, pts[1]=lato1, pts[2]=lato2
+        // Riorganizza per calcolaAngolo: p1=lato1, p2=vertice, p3=lato2
+        const gradi = calcolaAngolo(pts[1], pts[0], pts[2]);
         const label = gradi.toFixed(1) + "\u00B0";
         const newId = "m_" + Date.now();
-        setMisure(prev => [...prev, { id: newId, tipo: "angolo", punti: pts, valore: gradi, label, colore: COLORS.angolo }]);
+        // Salva come [lato1, vertice, lato2] per compatibilita con il disegno
+        setMisure(prev => [...prev, { id: newId, tipo: "angolo", punti: [pts[1], pts[0], pts[2]], valore: gradi, label, colore: COLORS.angolo }]);
         setPuntiCorrente([]);
         setSelectedMisura(newId);
         setTool("select");
@@ -3288,7 +3305,15 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
           <div style={{ fontWeight:700, fontSize:14, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{projectName}</div>
           {fileName && <div style={{ fontSize:10, color:C.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{fileName}</div>}
         </div>
-        {scala > 0 && <button onClick={() => { setScalaVal(String(scalaMetri)); setShowScalaModal(true); }} style={{ fontSize:10, color:COLORS.scala, fontWeight:700, background:COLORS.scala+"15", border:"1px solid "+COLORS.scala+"40", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontFamily:"Barlow" }}>{scalaMetri}m ✏️</button>}
+        {scala > 0 && !scalaConfermata && (
+          <div style={{ display:"flex", gap:4 }}>
+            <button onClick={() => { setScalaVal(String(scalaMetri)); setShowScalaModal(true); }} style={{ fontSize:10, color:COLORS.scala, fontWeight:700, background:COLORS.scala+"15", border:"1px solid "+COLORS.scala+"40", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontFamily:"Barlow" }}>{scalaMetri}m ✏️</button>
+            <button onClick={() => setScalaConfermata(true)} style={{ fontSize:10, color:C.green, fontWeight:700, background:C.green+"15", border:"1px solid "+C.green+"40", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontFamily:"Barlow" }}>✓</button>
+          </div>
+        )}
+        {scala > 0 && scalaConfermata && (
+          <button onClick={() => setScalaConfermata(false)} style={{ fontSize:10, color:COLORS.scala, fontWeight:700, background:"transparent", border:"none", cursor:"pointer", fontFamily:"Barlow" }}>{scalaMetri}m ✓</button>
+        )}
       </div>
 
       {/* File buttons */}
@@ -3328,15 +3353,58 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
             Lettura in corso...
           </div>
         )}
+        {/* Guida tool angolo */}
+        {tool === "angolo" && puntiCorrente.length === 0 && (
+          <div style={{ position:"absolute", top:12, left:"50%", transform:"translateX(-50%)", padding:"8px 16px", background:"rgba(226,75,74,0.85)", borderRadius:10, fontSize:12, fontWeight:700, color:"#fff", pointerEvents:"none" }}>
+            Tap sul vertice dell'angolo
+          </div>
+        )}
         {/* Info punti in corso */}
         {puntiCorrente.length > 0 && (
           <div style={{ position:"absolute", top:12, left:"50%", transform:"translateX(-50%)", padding:"8px 16px", background:"rgba(0,0,0,0.75)", borderRadius:10, fontSize:13, fontWeight:700, color:"#fff", pointerEvents:"none" }}>
             {tool==="scala" && puntiCorrente.length===1 && "Tap il secondo punto della scala"}
             {tool==="linea" && puntiCorrente.length===1 && "Tap il secondo punto"}
-            {tool==="angolo" && puntiCorrente.length===1 && "Tap il vertice (centro angolo)"}
-            {tool==="angolo" && puntiCorrente.length===2 && "Tap il terzo punto"}
+            {tool==="angolo" && puntiCorrente.length===1 && "Tap il primo lato"}
+            {tool==="angolo" && puntiCorrente.length===2 && "Tap il secondo lato"}
           </div>
         )}
+
+        {/* Lente d'ingrandimento */}
+        {magnifier && canvasRef.current && (() => {
+          const canvas = canvasRef.current;
+          const rect = canvas.getBoundingClientRect();
+          const dpr = window.devicePixelRatio || 1;
+          const sx = magnifier.x - rect.left;
+          const sy = magnifier.y - rect.top;
+          const lensSize = 120;
+          const zoomFactor = 3;
+          const srcSize = lensSize / zoomFactor;
+          // Posizione lente: sopra il dito
+          const lx = Math.max(lensSize/2, Math.min(rect.width - lensSize/2, sx));
+          const ly = sy - 140;
+          try {
+            const ctx2 = canvas.getContext("2d");
+            const imgData = ctx2.getImageData(
+              Math.max(0, (sx - srcSize/2) * dpr),
+              Math.max(0, (sy - srcSize/2) * dpr),
+              srcSize * dpr, srcSize * dpr
+            );
+            const tc = document.createElement("canvas");
+            tc.width = srcSize * dpr; tc.height = srcSize * dpr;
+            tc.getContext("2d").putImageData(imgData, 0, 0);
+            const lensUrl = tc.toDataURL();
+            return (
+              <div style={{ position:"absolute", left:lx - lensSize/2, top:Math.max(0, ly - lensSize/2), width:lensSize, height:lensSize, borderRadius:"50%", border:"3px solid #EF9F27", boxShadow:"0 4px 20px rgba(0,0,0,0.5)", overflow:"hidden", pointerEvents:"none", zIndex:10 }}>
+                <img src={lensUrl} alt="" style={{ width:lensSize, height:lensSize, imageRendering:"pixelated" }} />
+                {/* Croce centrale */}
+                <div style={{ position:"absolute", inset:0, display:"flex", alignItems:"center", justifyContent:"center", pointerEvents:"none" }}>
+                  <div style={{ width:1, height:lensSize, background:"#EF9F2780", position:"absolute" }} />
+                  <div style={{ height:1, width:lensSize, background:"#EF9F2780", position:"absolute" }} />
+                </div>
+              </div>
+            );
+          } catch { return null; }
+        })()}
 
         {/* Toast */}
         {toast && (
