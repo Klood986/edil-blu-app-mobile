@@ -2477,6 +2477,22 @@ function loadPdfjsCDN() {
   });
 }
 
+// Scarica PDF come ArrayBuffer via XHR (evita problemi CORS con fetch su Firebase Storage)
+function fetchPdfAsBuffer(url) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('GET', url, true);
+    xhr.responseType = 'arraybuffer';
+    xhr.setRequestHeader('Cache-Control', 'no-cache');
+    xhr.onload = () => {
+      if (xhr.status === 200) resolve(xhr.response);
+      else reject(new Error('HTTP ' + xhr.status));
+    };
+    xhr.onerror = () => reject(new Error('Errore di rete'));
+    xhr.send();
+  });
+}
+
 function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: initFileUrl, fileName: initFileName }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -2758,19 +2774,16 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     setShowFiles(false);
     if (ext === "pdf") {
       try {
-        // Scarica come blob per evitare problemi CORS con Firebase Storage
-        const response = await fetch(f.url);
-        const blob = await response.blob();
-        const arrayBuffer = await blob.arrayBuffer();
+        const arrayBuffer = await fetchPdfAsBuffer(f.url);
         const pdfjsLib = await loadPdfjsCDN();
         const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
         const page = await pdf.getPage(1);
-        const vp = page.getViewport({ scale:2.5 });
+        const vp = page.getViewport({ scale: 2 });
         const tc = document.createElement("canvas");
         tc.width = vp.width; tc.height = vp.height;
-        await page.render({ canvasContext:tc.getContext("2d"), viewport:vp }).promise;
+        await page.render({ canvasContext: tc.getContext("2d"), viewport: vp }).promise;
         loadImage(tc.toDataURL("image/png"), f.nome);
-      } catch (err) { console.error("Errore PDF remoto:", err); alert("Errore caricamento PDF: " + (err.message || err)); }
+      } catch (err) { console.error("Errore PDF remoto:", err); alert("Errore PDF: " + (err.message || err) + "\nURL: " + (f.url || "").substring(0, 80)); }
       return;
     }
     // Per immagini: carica direttamente
