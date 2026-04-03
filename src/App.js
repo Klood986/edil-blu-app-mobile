@@ -2609,7 +2609,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     ctx.moveTo(x, y - size); ctx.lineTo(x, y + size);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(x, y, 2/zoom, 0, Math.PI*2);
+    ctx.arc(x, y, 3/zoom, 0, Math.PI*2);
     ctx.fillStyle = color;
     ctx.fill();
     ctx.restore();
@@ -2742,9 +2742,10 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       // Croci sugli endpoint
       m.punti.forEach(p => {
         if (isSel) {
-          drawCross(ctx, p.x, p.y, 16/zoom, COLORS.selected, 2.5/zoom);
+          drawCross(ctx, p.x, p.y, 24/zoom, COLORS.selected, 3/zoom);
         } else {
-          drawCross(ctx, p.x, p.y, 16/zoom, "#0C447C", 2/zoom);
+          const crossColor = m.tipo === "scala" ? "#000000" : "#0C447C";
+          drawCross(ctx, p.x, p.y, 22/zoom, crossColor, 2.5/zoom);
         }
       });
       // X rossa per eliminare
@@ -2771,7 +2772,8 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       for (let i=1; i<puntiCorrente.length; i++) ctx.lineTo(puntiCorrente[i].x, puntiCorrente[i].y);
       ctx.stroke();
       ctx.setLineDash([]);
-      puntiCorrente.forEach(p => drawCross(ctx, p.x, p.y, 10/zoom, "#fff", 2/zoom));
+      const crossCol = tool === "scala" ? "#000" : "#fff";
+      puntiCorrente.forEach(p => drawCross(ctx, p.x, p.y, 22/zoom, crossCol, 3/zoom));
       ctx.restore();
     }
 
