@@ -643,6 +643,7 @@ function Cantieri({ user }) {
   const [tab, setTab] = useState("anagrafica");
   const [disTab, setDisTab] = useState("strutturali");
   const [disegni, setDisegni] = useState([]);
+  const [misuraFile, setMisuraFile] = useState(null); // { url, nome } — apre il misuratore
   const canMod = canEdit(user.ruolo);
 
   useEffect(() => {
@@ -697,6 +698,10 @@ function Cantieri({ user }) {
   if (sel) {
     const tabsCantiere = ["anagrafica","contatti","lavorazioni","appunti","disegni"];
     const disFiltrati = disegni.filter(d => d.categoria === disTab);
+    // Misuratore aperto su un file del cantiere
+    if (misuraFile) {
+      return <MisuratoreDisegno user={user} projectId={sel.id} projectName={sel.clientName||sel.name} fileUrl={misuraFile.url} fileName={misuraFile.nome} onBack={() => setMisuraFile(null)} />;
+    }
     return (
       <div style={{ paddingBottom:80 }} className="fu">
         {/* Header */}
@@ -878,7 +883,10 @@ function Cantieri({ user }) {
                   <Btn label={uploading?"Caricamento...":"+ Carica disegno"} onClick={()=>fileRef.current.click()} variant="ghost" icon="📎" disabled={uploading} />
                 </>
               )}
-              {disFiltrati.length===0 ? <Empty icon="📐" msg={`Nessun file ${disTab}`} /> : disFiltrati.map(d=>(
+              {disFiltrati.length===0 ? <Empty icon="📐" msg={`Nessun file ${disTab}`} /> : disFiltrati.map(d=>{
+                const ext = (d.nome||'').split('.').pop()?.toLowerCase()||'';
+                const canMisura = ['pdf','png','jpg','jpeg','tif','tiff'].includes(ext);
+                return (
                 <Card key={d.id}>
                   <div style={{ display:"flex", alignItems:"center", gap:12 }}>
                     <span style={{ fontSize:26 }}>{d.nome.match(/\.(png|jpg|jpeg)$/i)?"🖼":"📄"}</span>
@@ -886,10 +894,19 @@ function Cantieri({ user }) {
                       <div style={{ fontSize:13, fontWeight:600 }}>{d.nome}</div>
                       <div style={{ fontSize:11, color:C.textMuted }}>di {d.uploadedBy}</div>
                     </div>
-                    <a href={d.url} target="_blank" rel="noreferrer" style={{ color:C.accent, fontSize:22, textDecoration:"none" }}>↗</a>
+                    <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+                      {canMisura && (
+                        <button onClick={() => setMisuraFile({ url:d.url, nome:d.nome })}
+                          style={{ background:C.accentDim, border:`1px solid ${C.accent}40`, borderRadius:8, padding:"6px 10px", color:C.accent, fontSize:11, fontWeight:700, cursor:"pointer", fontFamily:"Barlow", display:"flex", alignItems:"center", gap:4 }}>
+                          📐 Misura
+                        </button>
+                      )}
+                      <a href={d.url} target="_blank" rel="noreferrer" style={{ color:C.textMuted, fontSize:18, textDecoration:"none", padding:"4px" }}>↗</a>
+                    </div>
                   </div>
                 </Card>
-              ))}
+                );
+              })}
             </>
           )}
         </div>
@@ -2443,14 +2460,14 @@ function MisuratoreHub({ user, onSelect }) {
 }
 
 // ─── MISURATORE DISEGNO ──────────────────────────────────────────────────────
-function MisuratoreDisegno({ user, projectId, projectName, onBack }) {
+function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: initFileUrl, fileName: initFileName }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
 
   // Tool: scala, linea, angolo
   const [tool, setTool] = useState("linea");
   const [imageEl, setImageEl] = useState(null);
-  const [fileName, setFileName] = useState("");
+  const [fileName, setFileName] = useState(initFileName || "");
 
   // View state
   const [offset, setOffset] = useState({ x:0, y:0 });
@@ -2488,6 +2505,16 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack }) {
     getDocs(collection(db,"projects",projectId,"lavorazioni"))
       .then(s => setLavorazioni(s.docs.map(d => ({id:d.id,...d.data()}))));
   }, [projectId]);
+
+  // Carica file passato come prop
+  useEffect(() => {
+    if (initFileUrl) {
+      const ext = (initFileName || '').split('.').pop()?.toLowerCase() || '';
+      if (ext === 'pdf') { loadRemoteFile({ url: initFileUrl, nome: initFileName || 'file.pdf' }); }
+      else if (['dwg','dxf'].includes(ext)) { /* skip */ }
+      else { loadImage(initFileUrl, initFileName || ''); }
+    }
+  }, [initFileUrl]);
 
   // Canvas resize
   useEffect(() => {
