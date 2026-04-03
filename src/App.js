@@ -696,7 +696,7 @@ function Cantieri({ user }) {
   const mapsUrl = (address) => address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : null;
 
   if (sel) {
-    const tabsCantiere = ["anagrafica","contatti","lavorazioni","appunti","disegni"];
+    const tabsCantiere = ["anagrafica","disegni","lavorazioni","appunti","contatti"];
     const disFiltrati = disegni.filter(d => d.categoria === disTab);
     // Misuratore aperto su un file del cantiere
     if (misuraFile) {
@@ -2615,7 +2615,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     ctx.moveTo(x, y - size); ctx.lineTo(x, y + size);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(x, y, 4/zoom, 0, Math.PI*2);
+    ctx.arc(x, y, 2/zoom, 0, Math.PI*2);
     ctx.fillStyle = color;
     ctx.fill();
     ctx.restore();
@@ -2745,16 +2745,15 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       ctx.fillStyle = color;
       ctx.fillText(m.label, lp.x-tm.width/2, lp.y);
 
-      // Croci sugli endpoint — extra grandi per dita grosse da cantiere
+      // Croci sugli endpoint
       m.punti.forEach(p => {
         if (isSel) {
-          ctx.beginPath(); ctx.arc(p.x, p.y, 44/zoom, 0, Math.PI*2);
-          ctx.fillStyle = COLORS.selected + "12"; ctx.fill();
+          ctx.beginPath(); ctx.arc(p.x, p.y, 30/zoom, 0, Math.PI*2);
+          ctx.fillStyle = COLORS.selected + "10"; ctx.fill();
           ctx.strokeStyle = COLORS.selected + "30"; ctx.lineWidth = 1/zoom; ctx.stroke();
-          drawCross(ctx, p.x, p.y, 36/zoom, COLORS.selected, 4/zoom);
+          drawCross(ctx, p.x, p.y, 14/zoom, COLORS.selected, 2.5/zoom);
         } else {
-          const crossColor = m.tipo === "scala" ? "#000000" : "#0C447C";
-          drawCross(ctx, p.x, p.y, 34/zoom, crossColor, 3/zoom);
+          drawCross(ctx, p.x, p.y, 12/zoom, "#000", 2/zoom);
         }
       });
       // X rossa per eliminare
@@ -2781,8 +2780,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       for (let i=1; i<puntiCorrente.length; i++) ctx.lineTo(puntiCorrente[i].x, puntiCorrente[i].y);
       ctx.stroke();
       ctx.setLineDash([]);
-      const crossCol = tool === "scala" ? "#000" : "#fff";
-      puntiCorrente.forEach(p => drawCross(ctx, p.x, p.y, 34/zoom, crossCol, 3.5/zoom));
+      puntiCorrente.forEach(p => drawCross(ctx, p.x, p.y, 14/zoom, "#000", 2.5/zoom));
       ctx.restore();
     }
 
@@ -2801,7 +2799,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       ctx.stroke();
       ctx.setLineDash([]);
       // Croci nere sui punti
-      scalaPunti.forEach(p => drawCross(ctx, p.x, p.y, 34/zoom, "#000", 3/zoom));
+      scalaPunti.forEach(p => drawCross(ctx, p.x, p.y, 14/zoom, "#000", 2.5/zoom));
       // Label scala al centro
       const slp = { x:(scalaPunti[0].x+scalaPunti[1].x)/2, y:(scalaPunti[0].y+scalaPunti[1].y)/2 };
       ctx.font = "bold "+12/zoom+"px sans-serif";
@@ -3308,11 +3306,11 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
         {scala > 0 && !scalaConfermata && (
           <div style={{ display:"flex", gap:4 }}>
             <button onClick={() => { setScalaVal(String(scalaMetri)); setShowScalaModal(true); }} style={{ fontSize:10, color:COLORS.scala, fontWeight:700, background:COLORS.scala+"15", border:"1px solid "+COLORS.scala+"40", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontFamily:"Barlow" }}>{scalaMetri}m ✏️</button>
-            <button onClick={() => setScalaConfermata(true)} style={{ fontSize:10, color:C.green, fontWeight:700, background:C.green+"15", border:"1px solid "+C.green+"40", borderRadius:6, padding:"4px 8px", cursor:"pointer", fontFamily:"Barlow" }}>✓</button>
+            <button onClick={() => { setScalaConfermata(true); showToast("Scala confermata: "+scalaMetri+"m"); }} style={{ fontSize:10, color:"#fff", fontWeight:700, background:C.green, border:"none", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontFamily:"Barlow" }}>Accetta</button>
           </div>
         )}
         {scala > 0 && scalaConfermata && (
-          <button onClick={() => setScalaConfermata(false)} style={{ fontSize:10, color:COLORS.scala, fontWeight:700, background:"transparent", border:"none", cursor:"pointer", fontFamily:"Barlow" }}>{scalaMetri}m ✓</button>
+          <span style={{ fontSize:9, color:C.green, fontWeight:600 }}>✓ {scalaMetri}m</span>
         )}
       </div>
 
@@ -3429,6 +3427,8 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
                   if (m) { setSalvaDesc(m.label); setShowSalvaModal(true); }
                   return;
                 }
+                // Scala: se gia confermata, riapri modifica
+                if (b.id==="scala" && scalaConfermata) { setScalaConfermata(false); }
                 setTool(b.id); setPuntiCorrente([]); setSelectedMisura(null);
               }}
               style={{
