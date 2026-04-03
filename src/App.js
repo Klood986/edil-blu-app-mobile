@@ -2675,16 +2675,31 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       ctx.fillText(m.label, lp.x-tm.width/2, lp.y);
 
       // Punti / handles
-      const hr = (isSel ? 12 : 8) / zoom;
+      const hr = (isSel ? 16 : 8) / zoom;
       m.punti.forEach(p => {
         ctx.beginPath();
         ctx.arc(p.x, p.y, hr, 0, Math.PI*2);
-        ctx.fillStyle = "#fff";
+        ctx.fillStyle = isSel ? "#fff" : "#fff";
         ctx.fill();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2/zoom;
+        ctx.strokeStyle = isSel ? COLORS.selected : color;
+        ctx.lineWidth = (isSel ? 3 : 2)/zoom;
         ctx.stroke();
+        // Punto interno arancio se selezionato
+        if (isSel) {
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 6/zoom, 0, Math.PI*2);
+          ctx.fillStyle = COLORS.selected;
+          ctx.fill();
+        }
       });
+      // X rossa per eliminare vicino alla misura selezionata
+      if (isSel && m.punti.length > 0) {
+        const ep = m.punti[0];
+        const xr = 18/zoom;
+        ctx.font = "bold " + 16/zoom + "px sans-serif";
+        ctx.fillStyle = "#E24B4A";
+        ctx.fillText("\u00D7", ep.x - xr, ep.y - xr);
+      }
       ctx.restore();
     });
 
@@ -2800,32 +2815,42 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     img.src = f.url;
   }
 
-  // ── TOUCH HANDLERS ──
+  // ── TOUCH HANDLERS (pinch zoom fluido + pan + tap + handle drag) ──
+  const lastPinchDist = useRef(null);
+  const lastPinchCenter = useRef(null);
+  const lastTapTime = useRef(0);
+
+  function getTouchDist(t1, t2) {
+    return Math.sqrt((t2.clientX - t1.clientX) ** 2 + (t2.clientY - t1.clientY) ** 2);
+  }
+  function getTouchCenter(t1, t2) {
+    return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+  }
+
   function onTouchStart(e) {
     const touches = e.touches;
     if (touches.length === 2) {
-      // Pinch zoom
-      const d = Math.sqrt((touches[1].clientX-touches[0].clientX)**2+(touches[1].clientY-touches[0].clientY)**2);
-      touchRef.current = { ...touchRef.current, startDist:d, startZoom:zoom, moved:true };
+      lastPinchDist.current = getTouchDist(touches[0], touches[1]);
+      lastPinchCenter.current = getTouchCenter(touches[0], touches[1]);
+      touchRef.current.moved = true;
       return;
     }
     const t = touches[0];
     touchRef.current = {
-      startPos: { x:t.clientX, y:t.clientY },
+      startPos: { x: t.clientX, y: t.clientY },
       startOffset: { ...offset },
-      startDist: 0, startZoom: zoom,
-      moved: false, lastTap: touchRef.current.lastTap
+      moved: false,
     };
 
-    // Check se stiamo toccando un handle della misura selezionata
+    // Check handle della misura selezionata (raggio grande per touch)
     if (selectedMisura) {
       const pt = screenToImg(t.clientX, t.clientY);
       const m = misure.find(mm => mm.id === selectedMisura);
       if (m) {
-        const threshold = 20 / zoom;
-        for (let i=0; i<m.punti.length; i++) {
+        const threshold = 24 / zoom;
+        for (let i = 0; i < m.punti.length; i++) {
           if (distPx(pt, m.punti[i]) < threshold) {
-            setDragHandle({ id:m.id, pointIndex:i });
+            setDragHandle({ id: m.id, pointIndex: i });
             touchRef.current.moved = true;
             return;
           }
@@ -2834,57 +2859,83 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     }
   }
 
-  function onTouchMove(e) {
-    e.preventDefault();
-    const touches = e.touches;
+  // addEventListener manuale con passive:false per preventDefault
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-    // Pinch zoom
-    if (touches.length === 2) {
-      const d = Math.sqrt((touches[1].clientX-touches[0].clientX)**2+(touches[1].clientY-touches[0].clientY)**2);
-      const ratio = d / (touchRef.current.startDist || 1);
-      const nz = Math.max(0.5, Math.min(8, touchRef.current.startZoom * ratio));
-      setZoom(nz);
-      touchRef.current.moved = true;
-      return;
-    }
+    const handleTouchMove = (e) => {
+      e.preventDefault();
+      const touches = e.touches;
 
-    const t = touches[0];
+      // Pinch zoom fluido centrato sul punto di pinch
+      if (touches.length === 2 && lastPinchDist.current) {
+        const newDist = getTouchDist(touches[0], touches[1]);
+        const newCenter = getTouchCenter(touches[0], touches[1]);
+        const scale = newDist / lastPinchDist.current;
+        const rect = canvas.getBoundingClientRect();
+        const cx = newCenter.x - rect.left;
+        const cy = newCenter.y - rect.top;
 
-    // Drag handle
-    if (dragHandle) {
-      const pt = screenToImg(t.clientX, t.clientY);
-      setMisure(prev => prev.map(m => {
-        if (m.id !== dragHandle.id) return m;
-        const np = [...m.punti]; np[dragHandle.pointIndex] = pt;
-        return { ...m, punti:np };
-      }));
-      touchRef.current.moved = true;
-      return;
-    }
-
-    // Pan
-    if (touchRef.current.startPos) {
-      const dx = t.clientX - touchRef.current.startPos.x;
-      const dy = t.clientY - touchRef.current.startPos.y;
-      if (Math.abs(dx)>5 || Math.abs(dy)>5) {
-        touchRef.current.moved = true;
-        setOffset({
-          x: touchRef.current.startOffset.x + dx,
-          y: touchRef.current.startOffset.y + dy
+        setZoom(prev => {
+          const nz = Math.min(8, Math.max(0.3, prev * scale));
+          setOffset(prevOff => ({
+            x: cx - (cx - prevOff.x) * (nz / prev),
+            y: cy - (cy - prevOff.y) * (nz / prev),
+          }));
+          return nz;
         });
+
+        lastPinchDist.current = newDist;
+        lastPinchCenter.current = newCenter;
+        touchRef.current.moved = true;
+        return;
       }
-    }
-  }
+
+      const t = touches[0];
+
+      // Drag handle
+      if (dragHandle) {
+        const pt = screenToImg(t.clientX, t.clientY);
+        setMisure(prev => prev.map(m => {
+          if (m.id !== dragHandle.id) return m;
+          const np = [...m.punti]; np[dragHandle.pointIndex] = pt;
+          return { ...m, punti: np };
+        }));
+        touchRef.current.moved = true;
+        return;
+      }
+
+      // Pan
+      if (touchRef.current.startPos) {
+        const dx = t.clientX - touchRef.current.startPos.x;
+        const dy = t.clientY - touchRef.current.startPos.y;
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+          touchRef.current.moved = true;
+          setOffset({
+            x: touchRef.current.startOffset.x + dx,
+            y: touchRef.current.startOffset.y + dy,
+          });
+        }
+      }
+    };
+
+    canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+    return () => canvas.removeEventListener('touchmove', handleTouchMove);
+  }, [dragHandle, selectedMisura, zoom, offset, misure]);
 
   function onTouchEnd(e) {
+    lastPinchDist.current = null;
+    lastPinchCenter.current = null;
+
     // Ricalcola misura dopo drag handle
     if (dragHandle) {
       const m = misure.find(mm => mm.id === dragHandle.id);
       if (m) {
-        let valore=0, label="";
-        if (m.tipo==="linea") { valore=distMetri(m.punti[0],m.punti[1]); label=scala>0?valore.toFixed(2)+" m":valore.toFixed(0)+" px"; }
-        if (m.tipo==="angolo"&&m.punti.length===3) { valore=calcolaAngolo(m.punti[0],m.punti[1],m.punti[2]); label=valore.toFixed(1)+"\u00B0"; }
-        setMisure(prev => prev.map(mm => mm.id===m.id ? {...mm,valore,label} : mm));
+        let valore = 0, label = "";
+        if (m.tipo === "linea") { valore = distMetri(m.punti[0], m.punti[1]); label = scala > 0 ? valore.toFixed(2) + " m" : valore.toFixed(0) + " px"; }
+        if (m.tipo === "angolo" && m.punti.length === 3) { valore = calcolaAngolo(m.punti[0], m.punti[1], m.punti[2]); label = valore.toFixed(1) + "\u00B0"; }
+        setMisure(prev => prev.map(mm => mm.id === m.id ? { ...mm, valore, label } : mm));
       }
       setDragHandle(null);
       return;
@@ -2892,12 +2943,26 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
 
     if (touchRef.current.moved) return;
 
-    // TAP — aggiungi punto o seleziona
+    // TAP
     const t = e.changedTouches[0];
     const rawPt = screenToImg(t.clientX, t.clientY);
     const pt = snapPoint(rawPt);
+    const now = Date.now();
 
-    // Se nessun tool attivo, prova a selezionare
+    // Double tap: elimina misura sotto il dito
+    if (now - lastTapTime.current < 350) {
+      const hit = hitTestMisura(rawPt);
+      if (hit) {
+        setMisure(prev => prev.filter(m => m.id !== hit));
+        setSelectedMisura(null);
+        showToast("Misura eliminata");
+        lastTapTime.current = 0;
+        return;
+      }
+    }
+    lastTapTime.current = now;
+
+    // Se nessun tool attivo o select: seleziona/deseleziona
     if (!tool || tool === "select") {
       const hit = hitTestMisura(rawPt);
       setSelectedMisura(hit);
@@ -2907,9 +2972,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     if (tool === "scala") {
       const pts = [...puntiCorrente, pt];
       setPuntiCorrente(pts);
-      if (pts.length === 2) {
-        setShowScalaModal(true);
-      }
+      if (pts.length === 2) setShowScalaModal(true);
       return;
     }
 
@@ -2918,9 +2981,11 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       setPuntiCorrente(pts);
       if (pts.length === 2) {
         const dist = distMetri(pts[0], pts[1]);
-        const label = scala > 0 ? dist.toFixed(2)+" m" : dist.toFixed(0)+" px";
-        setMisure(prev => [...prev, { id:"m_"+Date.now(), tipo:"linea", punti:pts, valore:dist, label, colore:COLORS.linea }]);
+        const label = scala > 0 ? dist.toFixed(2) + " m" : dist.toFixed(0) + " px";
+        setMisure(prev => [...prev, { id: "m_" + Date.now(), tipo: "linea", punti: pts, valore: dist, label, colore: COLORS.linea }]);
         setPuntiCorrente([]);
+        setTool("select");
+        setSelectedMisura("m_" + (Date.now() - 1)); // non perfetto ma approssima
       }
       return;
     }
@@ -2930,9 +2995,10 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       setPuntiCorrente(pts);
       if (pts.length === 3) {
         const gradi = calcolaAngolo(pts[0], pts[1], pts[2]);
-        const label = gradi.toFixed(1)+"\u00B0";
-        setMisure(prev => [...prev, { id:"m_"+Date.now(), tipo:"angolo", punti:pts, valore:gradi, label, colore:COLORS.angolo }]);
+        const label = gradi.toFixed(1) + "\u00B0";
+        setMisure(prev => [...prev, { id: "m_" + Date.now(), tipo: "angolo", punti: pts, valore: gradi, label, colore: COLORS.angolo }]);
         setPuntiCorrente([]);
+        setTool("select");
       }
       return;
     }
@@ -3003,6 +3069,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
   }
 
   const toolBtns = [
+    { id:"select",  icon:"\u261D",        label:"Seleziona", color:C.accent },
     { id:"scala",   icon:"\uD83D\uDCCF", label:"Scala",   color:COLORS.scala },
     { id:"linea",   icon:"\uD83D\uDCCF", label:"Linea",   color:COLORS.linea },
     { id:"angolo",  icon:"\uD83D\uDCD0", label:"Angolo",  color:COLORS.angolo },
@@ -3038,7 +3105,6 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       <div ref={containerRef} style={{ flex:1, position:"relative", overflow:"hidden" }}>
         <canvas ref={canvasRef}
           onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
           style={{ display:"block", touchAction:"none" }} />
         {!imageEl && (
