@@ -2586,7 +2586,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
   }
 
   function snapPoint(pt) {
-    const threshold = 20 / zoom;
+    const threshold = 30 / zoom;
     let best = pt; let bestDist = threshold;
     misure.forEach(m => m.punti.forEach(p => {
       const d = distPx(pt,p);
@@ -2739,13 +2739,17 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       ctx.fillStyle = color;
       ctx.fillText(m.label, lp.x-tm.width/2, lp.y);
 
-      // Croci sugli endpoint
+      // Croci sugli endpoint — grandi per dita grosse
       m.punti.forEach(p => {
         if (isSel) {
-          drawCross(ctx, p.x, p.y, 24/zoom, COLORS.selected, 3/zoom);
+          // Cerchio area di aggancio (zona tappabile) semitrasparente
+          ctx.beginPath(); ctx.arc(p.x, p.y, 40/zoom, 0, Math.PI*2);
+          ctx.fillStyle = COLORS.selected + "12"; ctx.fill();
+          ctx.strokeStyle = COLORS.selected + "30"; ctx.lineWidth = 1/zoom; ctx.stroke();
+          drawCross(ctx, p.x, p.y, 30/zoom, COLORS.selected, 3.5/zoom);
         } else {
           const crossColor = m.tipo === "scala" ? "#000000" : "#0C447C";
-          drawCross(ctx, p.x, p.y, 22/zoom, crossColor, 2.5/zoom);
+          drawCross(ctx, p.x, p.y, 28/zoom, crossColor, 2.5/zoom);
         }
       });
       // X rossa per eliminare
@@ -2773,7 +2777,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       ctx.stroke();
       ctx.setLineDash([]);
       const crossCol = tool === "scala" ? "#000" : "#fff";
-      puntiCorrente.forEach(p => drawCross(ctx, p.x, p.y, 22/zoom, crossCol, 3/zoom));
+      puntiCorrente.forEach(p => drawCross(ctx, p.x, p.y, 28/zoom, crossCol, 3/zoom));
       ctx.restore();
     }
 
@@ -2906,7 +2910,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       const pt = screenToImg(t.clientX, t.clientY);
       const m = misure.find(mm => mm.id === selectedMisura);
       if (m) {
-        const threshold = 24 / zoom;
+        const threshold = 40 / zoom; // area grande per dita grosse
         // Prima controlla gli handle
         for (let i = 0; i < m.punti.length; i++) {
           if (distPx(pt, m.punti[i]) < threshold) {
@@ -3128,7 +3132,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
   }
 
   function hitTestMisura(pt) {
-    const threshold = 20 / zoom;
+    const threshold = 30 / zoom;
     for (let i=misure.length-1; i>=0; i--) {
       const m = misure[i];
       // Hit su endpoint
