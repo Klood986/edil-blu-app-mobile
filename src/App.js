@@ -5,7 +5,7 @@ import {
 } from "firebase/auth";
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc,
-  query, where, orderBy, onSnapshot, serverTimestamp,
+  query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
@@ -2414,12 +2414,695 @@ function AppuntiHub({ user, onSelect }) {
   );
 }
 
+// ─── MISURATORE HUB ──────────────────────────────────────────────────────────
+function MisuratoreHub({ user, onSelect }) {
+  const [cantieri, setCantieri] = useState([]);
+  useEffect(() => {
+    getDocs(query(collection(db,"projects"),where("status","in",["active","draft"])))
+      .then(s => setCantieri(s.docs.map(d => ({id:d.id,...d.data()}))));
+  }, []);
+  return (
+    <div style={{ padding:"16px 16px 80px" }} className="fu">
+      <div style={{ fontSize:10, fontWeight:800, color:C.textMuted, letterSpacing:2, textTransform:"uppercase", marginBottom:14 }}>Seleziona cantiere</div>
+      {cantieri.length===0 && <Empty icon="📐" msg="Nessun cantiere attivo" />}
+      {cantieri.map(c => (
+        <div key={c.id} onClick={() => onSelect(c)}
+          style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:"14px 16px", marginBottom:8, cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}
+          onTouchStart={e => e.currentTarget.style.opacity="0.8"}
+          onTouchEnd={e => e.currentTarget.style.opacity="1"}>
+          <div style={{ width:40, height:40, borderRadius:10, background:"rgba(32,112,200,0.15)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>📐</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontWeight:700, fontSize:15, color:C.text }}>{c.clientName || c.name}</div>
+            {c.address && <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>📍 {c.address}</div>}
+          </div>
+          <span style={{ color:C.accent, fontSize:20 }}>›</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── MISURATORE DISEGNO ──────────────────────────────────────────────────────
+function MisuratoreDisegno({ user, projectId, projectName, onBack }) {
+  const canvasRef = useRef(null);
+  const containerRef = useRef(null);
+
+  // Tool: scala, linea, angolo
+  const [tool, setTool] = useState("linea");
+  const [imageEl, setImageEl] = useState(null);
+  const [fileName, setFileName] = useState("");
+
+  // View state
+  const [offset, setOffset] = useState({ x:0, y:0 });
+  const [zoom, setZoom] = useState(1);
+  const [scala, setScala] = useState(0); // px per metro
+
+  // Misure e punti
+  const [misure, setMisure] = useState([]);
+  const [puntiCorrente, setPuntiCorrente] = useState([]);
+  const [selectedMisura, setSelectedMisura] = useState(null);
+  const [dragHandle, setDragHandle] = useState(null); // { id, pointIndex }
+
+  // Touch state
+  const touchRef = useRef({ startPos:null, startOffset:null, startDist:0, startZoom:1, moved:false, lastTap:0 });
+
+  // File list e modali
+  const [showFiles, setShowFiles] = useState(false);
+  const [files, setFiles] = useState([]);
+  const [showScalaModal, setShowScalaModal] = useState(false);
+  const [scalaVal, setScalaVal] = useState("");
+  const [scalaUnit, setScalaUnit] = useState("m");
+  const [showSalvaModal, setShowSalvaModal] = useState(false);
+  const [lavorazioni, setLavorazioni] = useState([]);
+  const [selectedLav, setSelectedLav] = useState("");
+  const [salvaDesc, setSalvaDesc] = useState("");
+  const [sending, setSending] = useState(false);
+  const [toast, setToast] = useState("");
+
+  const COLORS = { scala:"#D85A30", linea:"#2070C8", angolo:"#E24B4A", selected:"#EF9F27" };
+
+  // Carica file e lavorazioni
+  useEffect(() => {
+    getDocs(collection(db,"projects",projectId,"files"))
+      .then(s => setFiles(s.docs.map(d => ({id:d.id,...d.data()}))));
+    getDocs(collection(db,"projects",projectId,"lavorazioni"))
+      .then(s => setLavorazioni(s.docs.map(d => ({id:d.id,...d.data()}))));
+  }, [projectId]);
+
+  // Canvas resize
+  useEffect(() => {
+    function resize() {
+      const c = canvasRef.current; const cont = containerRef.current;
+      if (!c || !cont) return;
+      const dpr = window.devicePixelRatio || 1;
+      c.width = cont.clientWidth * dpr;
+      c.height = cont.clientHeight * dpr;
+      c.style.width = cont.clientWidth + "px";
+      c.style.height = cont.clientHeight + "px";
+      redraw();
+    }
+    resize();
+    window.addEventListener("resize", resize);
+    return () => window.removeEventListener("resize", resize);
+  }, [imageEl, offset, zoom, misure, puntiCorrente, selectedMisura]);
+
+  // Helpers
+  function distPx(a, b) { return Math.sqrt((b.x-a.x)**2 + (b.y-a.y)**2); }
+  function distMetri(a, b) { return scala > 0 ? distPx(a,b) / scala : distPx(a,b); }
+  function calcolaAngolo(p1, p2, p3) {
+    const v1 = { x:p1.x-p2.x, y:p1.y-p2.y };
+    const v2 = { x:p3.x-p2.x, y:p3.y-p2.y };
+    const dot = v1.x*v2.x + v1.y*v2.y;
+    const mag1 = Math.sqrt(v1.x**2+v1.y**2);
+    const mag2 = Math.sqrt(v2.x**2+v2.y**2);
+    if (mag1===0||mag2===0) return 0;
+    return Math.acos(Math.max(-1,Math.min(1, dot/(mag1*mag2)))) * 180/Math.PI;
+  }
+
+  function screenToImg(sx, sy) {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect) return { x:0, y:0 };
+    return { x:(sx-rect.left-offset.x)/zoom, y:(sy-rect.top-offset.y)/zoom };
+  }
+
+  function snapPoint(pt) {
+    const threshold = 20 / zoom;
+    let best = pt; let bestDist = threshold;
+    misure.forEach(m => m.punti.forEach(p => {
+      const d = distPx(pt,p);
+      if (d < bestDist) { bestDist=d; best=p; }
+    }));
+    puntiCorrente.forEach(p => {
+      const d = distPx(pt,p);
+      if (d < bestDist) { bestDist=d; best=p; }
+    });
+    return best;
+  }
+
+  // ── DRAW ──
+  function redraw() {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    const w = canvas.width/dpr; const h = canvas.height/dpr;
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle = "#1a1a2e";
+    ctx.fillRect(0,0,w,h);
+
+    if (imageEl) {
+      ctx.save();
+      ctx.translate(offset.x, offset.y);
+      ctx.scale(zoom, zoom);
+      ctx.drawImage(imageEl, 0, 0);
+      ctx.restore();
+    }
+
+    // Disegna misure
+    misure.forEach(m => {
+      if (m.punti.length < 2) return;
+      const isSel = m.id === selectedMisura;
+      const color = isSel ? COLORS.selected : (COLORS[m.tipo] || COLORS.linea);
+      ctx.save();
+      ctx.translate(offset.x, offset.y);
+      ctx.scale(zoom, zoom);
+
+      // Linee
+      ctx.strokeStyle = color;
+      ctx.lineWidth = (isSel ? 3 : 2) / zoom;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      if (m.tipo === "angolo") {
+        ctx.moveTo(m.punti[0].x, m.punti[0].y);
+        ctx.lineTo(m.punti[1].x, m.punti[1].y);
+        ctx.lineTo(m.punti[2].x, m.punti[2].y);
+        ctx.stroke();
+        // Arco
+        const r = Math.min(distPx(m.punti[0],m.punti[1]), distPx(m.punti[2],m.punti[1]), 30/zoom) * 0.5;
+        const a1 = Math.atan2(m.punti[0].y-m.punti[1].y, m.punti[0].x-m.punti[1].x);
+        const a2 = Math.atan2(m.punti[2].y-m.punti[1].y, m.punti[2].x-m.punti[1].x);
+        ctx.beginPath();
+        ctx.arc(m.punti[1].x, m.punti[1].y, r, a1, a2, a1 > a2);
+        ctx.stroke();
+      } else {
+        ctx.moveTo(m.punti[0].x, m.punti[0].y);
+        for (let i=1; i<m.punti.length; i++) ctx.lineTo(m.punti[i].x, m.punti[i].y);
+        ctx.stroke();
+      }
+
+      // Label al centro
+      let lp;
+      if (m.tipo === "angolo") {
+        const p2 = m.punti[1];
+        const v1 = { x:m.punti[0].x-p2.x, y:m.punti[0].y-p2.y };
+        const v2 = { x:m.punti[2].x-p2.x, y:m.punti[2].y-p2.y };
+        const m1 = Math.sqrt(v1.x**2+v1.y**2)||1;
+        const m2 = Math.sqrt(v2.x**2+v2.y**2)||1;
+        const bx = v1.x/m1+v2.x/m2; const by = v1.y/m1+v2.y/m2;
+        const bm = Math.sqrt(bx**2+by**2)||1;
+        const rr = Math.min(m1,m2,40/zoom)*0.6;
+        lp = { x:p2.x+bx/bm*rr, y:p2.y+by/bm*rr };
+      } else {
+        lp = { x:(m.punti[0].x+m.punti[m.punti.length-1].x)/2, y:(m.punti[0].y+m.punti[m.punti.length-1].y)/2 };
+      }
+      ctx.font = "bold "+13/zoom+"px sans-serif";
+      const tm = ctx.measureText(m.label);
+      const pad = 4/zoom;
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fillRect(lp.x-tm.width/2-pad, lp.y-12/zoom, tm.width+pad*2, 16/zoom);
+      ctx.fillStyle = color;
+      ctx.fillText(m.label, lp.x-tm.width/2, lp.y);
+
+      // Punti / handles
+      const hr = (isSel ? 12 : 8) / zoom;
+      m.punti.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, hr, 0, Math.PI*2);
+        ctx.fillStyle = "#fff";
+        ctx.fill();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2/zoom;
+        ctx.stroke();
+      });
+      ctx.restore();
+    });
+
+    // Punti in costruzione
+    if (puntiCorrente.length > 0) {
+      const color = COLORS[tool] || COLORS.linea;
+      ctx.save();
+      ctx.translate(offset.x, offset.y);
+      ctx.scale(zoom, zoom);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2/zoom;
+      ctx.setLineDash([5/zoom, 5/zoom]);
+      ctx.beginPath();
+      ctx.moveTo(puntiCorrente[0].x, puntiCorrente[0].y);
+      for (let i=1; i<puntiCorrente.length; i++) ctx.lineTo(puntiCorrente[i].x, puntiCorrente[i].y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      puntiCorrente.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 8/zoom, 0, Math.PI*2);
+        ctx.fillStyle = "#fff";
+        ctx.fill();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2/zoom;
+        ctx.stroke();
+      });
+      ctx.restore();
+    }
+
+    // Scala info
+    if (scala > 0) {
+      ctx.fillStyle = "#aaa";
+      ctx.font = "11px sans-serif";
+      ctx.fillText("Scala: 1m = "+(scala).toFixed(0)+"px", 10, h-10);
+    }
+  }
+
+  useEffect(() => { requestAnimationFrame(redraw); }, [imageEl, offset, zoom, misure, puntiCorrente, selectedMisura]);
+
+  // ── Carica immagine ──
+  function loadImage(src, name) {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      setImageEl(img); if (name) setFileName(name);
+      setOffset({x:0,y:0}); setZoom(1); setMisure([]); setPuntiCorrente([]); setScala(0); setSelectedMisura(null);
+    };
+    img.src = src;
+  }
+
+  async function handleFileInput(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = file.name.split(".").pop()?.toLowerCase() || "";
+    if (ext === "dwg" || ext === "dxf") {
+      alert("Converti in PDF o immagine per misurare");
+      return;
+    }
+    if (file.type === "application/pdf" || ext === "pdf") {
+      try {
+        const pdfjsLib = await import("pdfjs-dist/build/pdf");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        const ab = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(ab) }).promise;
+        const page = await pdf.getPage(1);
+        const vp = page.getViewport({ scale:2.5 });
+        const tc = document.createElement("canvas");
+        tc.width = vp.width; tc.height = vp.height;
+        await page.render({ canvasContext:tc.getContext("2d"), viewport:vp }).promise;
+        loadImage(tc.toDataURL("image/png"), file.name);
+      } catch (err) {
+        console.error(err);
+        alert("Errore nel caricamento del PDF");
+      }
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ev => { if (ev.target?.result) loadImage(ev.target.result, file.name); };
+    reader.readAsDataURL(file);
+  }
+
+  async function loadRemoteFile(f) {
+    const ext = (f.nome||"").split(".").pop()?.toLowerCase() || "";
+    if (ext === "dwg" || ext === "dxf") {
+      alert("Converti in PDF o immagine per misurare");
+      return;
+    }
+    setShowFiles(false);
+    if (ext === "pdf") {
+      try {
+        const pdfjsLib = await import("pdfjs-dist/build/pdf");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        const pdf = await pdfjsLib.getDocument(f.url).promise;
+        const page = await pdf.getPage(1);
+        const vp = page.getViewport({ scale:2.5 });
+        const tc = document.createElement("canvas");
+        tc.width = vp.width; tc.height = vp.height;
+        await page.render({ canvasContext:tc.getContext("2d"), viewport:vp }).promise;
+        loadImage(tc.toDataURL("image/png"), f.nome);
+      } catch { alert("Errore caricamento PDF remoto"); }
+      return;
+    }
+    loadImage(f.url, f.nome);
+  }
+
+  // ── TOUCH HANDLERS ──
+  function onTouchStart(e) {
+    const touches = e.touches;
+    if (touches.length === 2) {
+      // Pinch zoom
+      const d = Math.sqrt((touches[1].clientX-touches[0].clientX)**2+(touches[1].clientY-touches[0].clientY)**2);
+      touchRef.current = { ...touchRef.current, startDist:d, startZoom:zoom, moved:true };
+      return;
+    }
+    const t = touches[0];
+    touchRef.current = {
+      startPos: { x:t.clientX, y:t.clientY },
+      startOffset: { ...offset },
+      startDist: 0, startZoom: zoom,
+      moved: false, lastTap: touchRef.current.lastTap
+    };
+
+    // Check se stiamo toccando un handle della misura selezionata
+    if (selectedMisura) {
+      const pt = screenToImg(t.clientX, t.clientY);
+      const m = misure.find(mm => mm.id === selectedMisura);
+      if (m) {
+        const threshold = 20 / zoom;
+        for (let i=0; i<m.punti.length; i++) {
+          if (distPx(pt, m.punti[i]) < threshold) {
+            setDragHandle({ id:m.id, pointIndex:i });
+            touchRef.current.moved = true;
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  function onTouchMove(e) {
+    e.preventDefault();
+    const touches = e.touches;
+
+    // Pinch zoom
+    if (touches.length === 2) {
+      const d = Math.sqrt((touches[1].clientX-touches[0].clientX)**2+(touches[1].clientY-touches[0].clientY)**2);
+      const ratio = d / (touchRef.current.startDist || 1);
+      const nz = Math.max(0.5, Math.min(8, touchRef.current.startZoom * ratio));
+      setZoom(nz);
+      touchRef.current.moved = true;
+      return;
+    }
+
+    const t = touches[0];
+
+    // Drag handle
+    if (dragHandle) {
+      const pt = screenToImg(t.clientX, t.clientY);
+      setMisure(prev => prev.map(m => {
+        if (m.id !== dragHandle.id) return m;
+        const np = [...m.punti]; np[dragHandle.pointIndex] = pt;
+        return { ...m, punti:np };
+      }));
+      touchRef.current.moved = true;
+      return;
+    }
+
+    // Pan
+    if (touchRef.current.startPos) {
+      const dx = t.clientX - touchRef.current.startPos.x;
+      const dy = t.clientY - touchRef.current.startPos.y;
+      if (Math.abs(dx)>5 || Math.abs(dy)>5) {
+        touchRef.current.moved = true;
+        setOffset({
+          x: touchRef.current.startOffset.x + dx,
+          y: touchRef.current.startOffset.y + dy
+        });
+      }
+    }
+  }
+
+  function onTouchEnd(e) {
+    // Ricalcola misura dopo drag handle
+    if (dragHandle) {
+      const m = misure.find(mm => mm.id === dragHandle.id);
+      if (m) {
+        let valore=0, label="";
+        if (m.tipo==="linea") { valore=distMetri(m.punti[0],m.punti[1]); label=scala>0?valore.toFixed(2)+" m":valore.toFixed(0)+" px"; }
+        if (m.tipo==="angolo"&&m.punti.length===3) { valore=calcolaAngolo(m.punti[0],m.punti[1],m.punti[2]); label=valore.toFixed(1)+"\u00B0"; }
+        setMisure(prev => prev.map(mm => mm.id===m.id ? {...mm,valore,label} : mm));
+      }
+      setDragHandle(null);
+      return;
+    }
+
+    if (touchRef.current.moved) return;
+
+    // TAP — aggiungi punto o seleziona
+    const t = e.changedTouches[0];
+    const rawPt = screenToImg(t.clientX, t.clientY);
+    const pt = snapPoint(rawPt);
+
+    // Se nessun tool attivo, prova a selezionare
+    if (!tool || tool === "select") {
+      const hit = hitTestMisura(rawPt);
+      setSelectedMisura(hit);
+      return;
+    }
+
+    if (tool === "scala") {
+      const pts = [...puntiCorrente, pt];
+      setPuntiCorrente(pts);
+      if (pts.length === 2) {
+        setShowScalaModal(true);
+      }
+      return;
+    }
+
+    if (tool === "linea") {
+      const pts = [...puntiCorrente, pt];
+      setPuntiCorrente(pts);
+      if (pts.length === 2) {
+        const dist = distMetri(pts[0], pts[1]);
+        const label = scala > 0 ? dist.toFixed(2)+" m" : dist.toFixed(0)+" px";
+        setMisure(prev => [...prev, { id:"m_"+Date.now(), tipo:"linea", punti:pts, valore:dist, label, colore:COLORS.linea }]);
+        setPuntiCorrente([]);
+      }
+      return;
+    }
+
+    if (tool === "angolo") {
+      const pts = [...puntiCorrente, pt];
+      setPuntiCorrente(pts);
+      if (pts.length === 3) {
+        const gradi = calcolaAngolo(pts[0], pts[1], pts[2]);
+        const label = gradi.toFixed(1)+"\u00B0";
+        setMisure(prev => [...prev, { id:"m_"+Date.now(), tipo:"angolo", punti:pts, valore:gradi, label, colore:COLORS.angolo }]);
+        setPuntiCorrente([]);
+      }
+      return;
+    }
+  }
+
+  function hitTestMisura(pt) {
+    const threshold = 20 / zoom;
+    for (let i=misure.length-1; i>=0; i--) {
+      const m = misure[i];
+      for (const p of m.punti) {
+        if (distPx(pt,p) < threshold) return m.id;
+      }
+    }
+    return null;
+  }
+
+  // Conferma scala
+  function confermaScala() {
+    if (!scalaVal || Number(scalaVal) <= 0 || puntiCorrente.length < 2) return;
+    let valMetri = Number(scalaVal);
+    if (scalaUnit === "cm") valMetri /= 100;
+    const dist = distPx(puntiCorrente[0], puntiCorrente[1]);
+    setScala(dist / valMetri);
+    setPuntiCorrente([]);
+    setShowScalaModal(false);
+    setScalaVal("");
+    showToast("Scala impostata: 1m = "+(dist/valMetri).toFixed(0)+"px");
+  }
+
+  // Salva misura al libretto
+  async function inviaMisura() {
+    if (!selectedLav || !selectedMisura) return;
+    const m = misure.find(mm => mm.id === selectedMisura);
+    if (!m) return;
+    setSending(true);
+    try {
+      const lavRef = doc(db,"projects",projectId,"lavorazioni",selectedLav);
+      await updateDoc(lavRef, { misure: arrayUnion({
+        desc: salvaDesc || m.label,
+        b: m.valore,
+        h: null,
+        valore: m.valore,
+        fonte: "misuratore_mobile",
+        createdAt: new Date().toISOString()
+      })});
+      const lav = lavorazioni.find(l => l.id === selectedLav);
+      showToast("Misura inviata a "+(lav?.nome || lav?.descrizione || selectedLav));
+      setShowSalvaModal(false);
+      setSalvaDesc("");
+      setSelectedLav("");
+    } catch (e) {
+      console.error(e);
+      alert("Errore nell'invio");
+    }
+    setSending(false);
+  }
+
+  function showToast(msg) {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
+  }
+
+  function eliminaSelezionata() {
+    if (!selectedMisura) return;
+    setMisure(prev => prev.filter(m => m.id !== selectedMisura));
+    setSelectedMisura(null);
+    showToast("Misura eliminata");
+  }
+
+  const toolBtns = [
+    { id:"scala",   icon:"\uD83D\uDCCF", label:"Scala",   color:COLORS.scala },
+    { id:"linea",   icon:"\uD83D\uDCCF", label:"Linea",   color:COLORS.linea },
+    { id:"angolo",  icon:"\uD83D\uDCD0", label:"Angolo",  color:COLORS.angolo },
+    { id:"elimina", icon:"\uD83D\uDDD1", label:"Elimina", color:C.red },
+    { id:"salva",   icon:"\uD83D\uDCBE", label:"Salva",   color:C.green },
+  ];
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", height:"100vh", background:C.bg, position:"fixed", inset:0, zIndex:400 }}>
+      {/* Header */}
+      <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:"10px 12px", display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+        <button onClick={onBack} style={{ background:"none", border:"none", color:C.accent, fontSize:22, cursor:"pointer", padding:"4px 8px" }}>←</button>
+        <div style={{ flex:1, minWidth:0 }}>
+          <div style={{ fontWeight:700, fontSize:14, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{projectName}</div>
+          {fileName && <div style={{ fontSize:10, color:C.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{fileName}</div>}
+        </div>
+        {scala > 0 && <span style={{ fontSize:10, color:COLORS.scala, fontWeight:700 }}>Scala OK</span>}
+      </div>
+
+      {/* File buttons */}
+      <div style={{ display:"flex", gap:8, padding:"8px 12px", background:C.surface, borderBottom:`1px solid ${C.border}`, flexShrink:0 }}>
+        <button onClick={() => setShowFiles(true)}
+          style={{ flex:1, padding:"10px", fontSize:12, fontWeight:700, background:`${C.accent}15`, border:`1px solid ${C.accent}40`, borderRadius:10, color:C.accent, cursor:"pointer", fontFamily:"Barlow" }}>
+          📁 Apri da cantiere
+        </button>
+        <label style={{ flex:1, padding:"10px", fontSize:12, fontWeight:700, background:`${C.green}15`, border:`1px solid ${C.green}40`, borderRadius:10, color:C.green, cursor:"pointer", fontFamily:"Barlow", textAlign:"center" }}>
+          📷 Scatta foto
+          <input type="file" accept="image/*" capture="environment" onChange={handleFileInput} style={{ display:"none" }} />
+        </label>
+      </div>
+
+      {/* Canvas */}
+      <div ref={containerRef} style={{ flex:1, position:"relative", overflow:"hidden" }}>
+        <canvas ref={canvasRef}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+          style={{ display:"block", touchAction:"none" }} />
+        {!imageEl && (
+          <div style={{ position:"absolute", inset:0, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", color:C.textMuted, gap:12 }}>
+            <div style={{ fontSize:48 }}>📐</div>
+            <div style={{ fontSize:16, fontWeight:700, color:C.textDim }}>Apri un disegno</div>
+            <div style={{ fontSize:12 }}>Carica da cantiere o scatta una foto</div>
+          </div>
+        )}
+
+        {/* Info punti in corso */}
+        {puntiCorrente.length > 0 && (
+          <div style={{ position:"absolute", top:12, left:"50%", transform:"translateX(-50%)", padding:"8px 16px", background:"rgba(0,0,0,0.75)", borderRadius:10, fontSize:13, fontWeight:700, color:"#fff", pointerEvents:"none" }}>
+            {tool==="scala" && puntiCorrente.length===1 && "Tap il secondo punto della scala"}
+            {tool==="linea" && puntiCorrente.length===1 && "Tap il secondo punto"}
+            {tool==="angolo" && puntiCorrente.length===1 && "Tap il vertice (centro angolo)"}
+            {tool==="angolo" && puntiCorrente.length===2 && "Tap il terzo punto"}
+          </div>
+        )}
+
+        {/* Toast */}
+        {toast && (
+          <div style={{ position:"absolute", bottom:80, left:"50%", transform:"translateX(-50%)", padding:"10px 20px", background:C.green, borderRadius:10, fontSize:13, fontWeight:700, color:"#fff", pointerEvents:"none", animation:"fadeUp .25s ease" }}>
+            {toast}
+          </div>
+        )}
+      </div>
+
+      {/* Toolbar bottom */}
+      <div style={{ display:"flex", height:64, background:C.surface, borderTop:`1px solid ${C.border}`, flexShrink:0 }}>
+        {toolBtns.map(b => {
+          const isActive = tool === b.id;
+          const isDisabled = (b.id==="elimina" || b.id==="salva") && !selectedMisura;
+          return (
+            <button key={b.id}
+              onClick={() => {
+                if (b.id==="elimina") { eliminaSelezionata(); return; }
+                if (b.id==="salva") {
+                  if (!selectedMisura) return;
+                  const m = misure.find(mm => mm.id===selectedMisura);
+                  if (m) { setSalvaDesc(m.label); setShowSalvaModal(true); }
+                  return;
+                }
+                setTool(b.id); setPuntiCorrente([]); setSelectedMisura(null);
+              }}
+              style={{
+                flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4,
+                background: isActive ? `${b.color}20` : "transparent",
+                border:"none", borderTop: isActive ? `2px solid ${b.color}` : "2px solid transparent",
+                color: isDisabled ? C.textMuted : (isActive ? b.color : C.textDim),
+                fontSize:10, fontWeight:700, cursor: isDisabled ? "default" : "pointer",
+                opacity: isDisabled ? 0.4 : 1, fontFamily:"Barlow",
+              }}>
+              <span style={{ fontSize:22 }}>{b.icon}</span>
+              {b.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Modale file cantiere */}
+      {showFiles && (
+        <Modal title="File cantiere" onClose={() => setShowFiles(false)}>
+          {files.length===0 && <Empty icon="📁" msg="Nessun file caricato" />}
+          {files.map(f => {
+            const ext = (f.nome||"").split(".").pop()?.toLowerCase()||"";
+            const isDwg = ["dwg","dxf"].includes(ext);
+            return (
+              <div key={f.id} onClick={() => loadRemoteFile(f)}
+                style={{ display:"flex", alignItems:"center", gap:10, padding:"12px 14px", background:C.card, border:`1px solid ${C.border}`, borderRadius:10, marginBottom:8, cursor:"pointer" }}>
+                <span style={{ fontSize:9, fontWeight:700, padding:"3px 6px", borderRadius:4, background: isDwg ? `${C.red}20` : `${C.accent}20`, color: isDwg ? C.red : C.accent }}>
+                  {ext.toUpperCase()}
+                </span>
+                <div style={{ flex:1, fontSize:13, fontWeight:600, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.nome}</div>
+                {isDwg && <span style={{ fontSize:10, color:C.red }}>No</span>}
+              </div>
+            );
+          })}
+          <div style={{ marginTop:12 }}>
+            <label style={{ display:"block", padding:"12px", fontSize:13, fontWeight:700, background:`${C.accent}15`, border:`1px solid ${C.accent}40`, borderRadius:10, color:C.accent, cursor:"pointer", textAlign:"center" }}>
+              📤 Carica file dal telefono
+              <input type="file" accept=".pdf,.png,.jpg,.jpeg,.tif,.tiff" onChange={e => { handleFileInput(e); setShowFiles(false); }} style={{ display:"none" }} />
+            </label>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modale scala */}
+      {showScalaModal && (
+        <Modal title="Imposta scala" onClose={() => { setShowScalaModal(false); setPuntiCorrente([]); }}>
+          <div style={{ fontSize:13, color:C.textDim, marginBottom:16 }}>Inserisci la misura reale tra i due punti selezionati</div>
+          <Inp placeholder="Es. 3.50" value={scalaVal} onChange={e => setScalaVal(e.target.value)} type="number" />
+          <Sel value={scalaUnit} onChange={e => setScalaUnit(e.target.value)}>
+            <option value="m">Metri</option>
+            <option value="cm">Centimetri</option>
+          </Sel>
+          <Btn label="✓ Conferma scala" onClick={confermaScala} />
+        </Modal>
+      )}
+
+      {/* Modale salva misura */}
+      {showSalvaModal && (
+        <Modal title="Invia misura al libretto" onClose={() => setShowSalvaModal(false)}>
+          {(() => {
+            const m = misure.find(mm => mm.id === selectedMisura);
+            return (
+              <>
+                <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"14px 16px", marginBottom:16, textAlign:"center" }}>
+                  <div style={{ fontSize:10, color:C.textMuted, marginBottom:4 }}>Misura</div>
+                  <div style={{ fontSize:24, fontWeight:800, color:C.accent, fontFamily:"Barlow Condensed" }}>{m?.label || "—"}</div>
+                </div>
+                <Sel value={selectedLav} onChange={e => setSelectedLav(e.target.value)}>
+                  <option value="">Seleziona lavorazione...</option>
+                  {lavorazioni.map(l => <option key={l.id} value={l.id}>{l.nome || l.descrizione || l.id}</option>)}
+                </Sel>
+                <Inp placeholder="Descrizione (es. Lunghezza parete nord)" value={salvaDesc} onChange={e => setSalvaDesc(e.target.value)} />
+                <Btn label={sending ? "Invio..." : "📤 Invia al libretto"} onClick={inviaMisura} disabled={sending || !selectedLav} />
+              </>
+            );
+          })()}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 export default function App() {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState("dashboard");
   const [altroOpen, setAltroOpen] = useState(false);
   const [appuntiCantiere, setAppuntiCantiere] = useState(null);
+  const [misuratoreProgetto, setMisuratoreProgetto] = useState(null);
   const [stats, setStats] = useState({ cantieri:0, operai:0, ferie:0, rap:0 });
 
   useEffect(() => {
@@ -2476,10 +3159,11 @@ export default function App() {
     { id:"procedure",      icon:"📋", label:"Procedure" },
     { id:"regolamento",    icon:"📜", label:"Regolamento" },
     { id:"appunti_hub",    icon:"📷", label:"Appunti cantiere" },
+    { id:"misuratore_hub", icon:"📐", label:"Misuratore" },
     ...(isManager(user.ruolo)?[{ id:"gestione", icon:"⚙", label:"Gestione" }]:[]),
   ];
 
-  const titles = { dashboard:"Dashboard", cantieri:"Cantieri", chat:"Chat", personale:"Area Personale", cronoprogramma:"Cronoprogramma", procedure:"Procedure", regolamento:"Regolamento", gestione:"Gestione", appunti_hub:"Appunti cantiere" };
+  const titles = { dashboard:"Dashboard", cantieri:"Cantieri", chat:"Chat", personale:"Area Personale", cronoprogramma:"Cronoprogramma", procedure:"Procedure", regolamento:"Regolamento", gestione:"Gestione", appunti_hub:"Appunti cantiere", misuratore_hub:"Misuratore" };
 
   return (
     <div style={{ minHeight:"100vh", background:C.bg, color:C.text, fontFamily:"Barlow,sans-serif", maxWidth:480, margin:"0 auto" }}>
@@ -2512,6 +3196,8 @@ export default function App() {
       {section==="gestione"       && <Gestione user={user} />}
       {section==="appunti_hub"    && !appuntiCantiere && <AppuntiHub user={user} onSelect={c => setAppuntiCantiere(c)} />}
       {section==="appunti_hub"    && appuntiCantiere && <AppuntiCantiere user={user} projectId={appuntiCantiere.id} projectName={appuntiCantiere.clientName||appuntiCantiere.name} onBack={() => setAppuntiCantiere(null)} />}
+      {section==="misuratore_hub" && !misuratoreProgetto && <MisuratoreHub user={user} onSelect={p => setMisuratoreProgetto(p)} />}
+      {section==="misuratore_hub" && misuratoreProgetto && <MisuratoreDisegno user={user} projectId={misuratoreProgetto.id} projectName={misuratoreProgetto.clientName||misuratoreProgetto.name} onBack={() => setMisuratoreProgetto(null)} />}
 
       {/* Menu Altro */}
       {altroOpen && (
@@ -2533,7 +3219,7 @@ export default function App() {
         {navItems.map(n => {
           const active = n.id==="altro" ? altroItems.map(i=>i.id).includes(section) : section===n.id;
           return (
-            <button key={n.id} onClick={()=>n.id==="altro"?setAltroOpen(!altroOpen):(setSection(n.id),setAppuntiCantiere(null))}
+            <button key={n.id} onClick={()=>n.id==="altro"?setAltroOpen(!altroOpen):(setSection(n.id),setAppuntiCantiere(null),setMisuratoreProgetto(null))}
               style={{ flex:1, padding:"10px 0 8px", background:"none", border:"none", color:active?C.accent:C.textMuted, fontSize:9, fontWeight:active?800:500, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, borderTop:`2px solid ${active?C.accent:"transparent"}`, fontFamily:"Barlow", letterSpacing:0.3, textTransform:"uppercase" }}>
               <span style={{ fontSize:20 }}>{n.icon}</span>
               {n.label}
