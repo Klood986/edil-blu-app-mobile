@@ -2512,6 +2512,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
   const [puntiCorrente, setPuntiCorrente] = useState([]);
   const [selectedMisura, setSelectedMisura] = useState(null);
   const [dragHandle, setDragHandle] = useState(null); // { id, pointIndex }
+  const dragMisuraRef = useRef(null); // { id, startPunti, startTouch }
 
   // Touch state
   const touchRef = useRef({ startPos:null, startOffset:null, startDist:0, startZoom:1, moved:false, lastTap:0 });
@@ -2598,6 +2599,71 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     return best;
   }
 
+  // Croce di precisione
+  function drawCross(ctx, x, y, size, color, lw) {
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw || 1.5/zoom;
+    ctx.beginPath();
+    ctx.moveTo(x - size, y); ctx.lineTo(x + size, y);
+    ctx.moveTo(x, y - size); ctx.lineTo(x, y + size);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x, y, 2/zoom, 0, Math.PI*2);
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Distanza punto-segmento
+  function distPtSeg(pt, a, b) {
+    const dx = b.x-a.x, dy = b.y-a.y;
+    const len2 = dx*dx+dy*dy;
+    if (len2===0) return distPx(pt,a);
+    let t = ((pt.x-a.x)*dx+(pt.y-a.y)*dy)/len2;
+    t = Math.max(0,Math.min(1,t));
+    return distPx(pt, {x:a.x+t*dx, y:a.y+t*dy});
+  }
+
+  // OCR su area del canvas
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [showOcrResult, setShowOcrResult] = useState(null); // { valore, x, y }
+
+  async function leggiQuotaDaCanvas(sx, sy) {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    setOcrLoading(true);
+    try {
+      const ctx = canvas.getContext("2d");
+      const dpr = window.devicePixelRatio || 1;
+      const size = 140 * dpr;
+      const cx = sx * dpr, cy = sy * dpr;
+      const x0 = Math.max(0, Math.round(cx - size/2));
+      const y0 = Math.max(0, Math.round(cy - size/2));
+      const imageData = ctx.getImageData(x0, y0, Math.min(size, canvas.width - x0), Math.min(size, canvas.height - y0));
+      const tc = document.createElement("canvas");
+      tc.width = imageData.width; tc.height = imageData.height;
+      tc.getContext("2d").putImageData(imageData, 0, 0);
+      const Tesseract = (await import("tesseract.js")).default;
+      const result = await Tesseract.recognize(tc, "eng", { tessedit_char_whitelist: "0123456789.," });
+      const testo = result.data.text.trim();
+      const numMatch = testo.match(/[\d]+[.,]?[\d]*/);
+      if (numMatch) {
+        const valore = parseFloat(numMatch[0].replace(",", "."));
+        if (valore > 0) {
+          setShowOcrResult({ valore, x: sx, y: sy });
+          setOcrLoading(false);
+          return;
+        }
+      }
+      showToast("Nessun numero trovato");
+    } catch (err) {
+      console.error("OCR:", err);
+      showToast("Errore lettura: " + (err.message || ""));
+    }
+    setOcrLoading(false);
+  }
+
   // ── DRAW ──
   function redraw() {
     const canvas = canvasRef.current;
@@ -2638,7 +2704,6 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
         ctx.lineTo(m.punti[1].x, m.punti[1].y);
         ctx.lineTo(m.punti[2].x, m.punti[2].y);
         ctx.stroke();
-        // Arco
         const r = Math.min(distPx(m.punti[0],m.punti[1]), distPx(m.punti[2],m.punti[1]), 30/zoom) * 0.5;
         const a1 = Math.atan2(m.punti[0].y-m.punti[1].y, m.punti[0].x-m.punti[1].x);
         const a2 = Math.atan2(m.punti[2].y-m.punti[1].y, m.punti[2].x-m.punti[1].x);
@@ -2674,31 +2739,20 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       ctx.fillStyle = color;
       ctx.fillText(m.label, lp.x-tm.width/2, lp.y);
 
-      // Punti / handles
-      const hr = (isSel ? 16 : 8) / zoom;
+      // Croci sugli endpoint
       m.punti.forEach(p => {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, hr, 0, Math.PI*2);
-        ctx.fillStyle = isSel ? "#fff" : "#fff";
-        ctx.fill();
-        ctx.strokeStyle = isSel ? COLORS.selected : color;
-        ctx.lineWidth = (isSel ? 3 : 2)/zoom;
-        ctx.stroke();
-        // Punto interno arancio se selezionato
         if (isSel) {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 6/zoom, 0, Math.PI*2);
-          ctx.fillStyle = COLORS.selected;
-          ctx.fill();
+          drawCross(ctx, p.x, p.y, 14/zoom, COLORS.selected, 2.5/zoom);
+        } else {
+          drawCross(ctx, p.x, p.y, 8/zoom, color, 1.5/zoom);
         }
       });
-      // X rossa per eliminare vicino alla misura selezionata
+      // X rossa per eliminare
       if (isSel && m.punti.length > 0) {
         const ep = m.punti[0];
-        const xr = 18/zoom;
         ctx.font = "bold " + 16/zoom + "px sans-serif";
         ctx.fillStyle = "#E24B4A";
-        ctx.fillText("\u00D7", ep.x - xr, ep.y - xr);
+        ctx.fillText("\u00D7", ep.x - 18/zoom, ep.y - 18/zoom);
       }
       ctx.restore();
     });
@@ -2717,15 +2771,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       for (let i=1; i<puntiCorrente.length; i++) ctx.lineTo(puntiCorrente[i].x, puntiCorrente[i].y);
       ctx.stroke();
       ctx.setLineDash([]);
-      puntiCorrente.forEach(p => {
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 8/zoom, 0, Math.PI*2);
-        ctx.fillStyle = "#fff";
-        ctx.fill();
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2/zoom;
-        ctx.stroke();
-      });
+      puntiCorrente.forEach(p => drawCross(ctx, p.x, p.y, 10/zoom, "#fff", 2/zoom));
       ctx.restore();
     }
 
@@ -2735,9 +2781,20 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       ctx.font = "11px sans-serif";
       ctx.fillText("Scala: 1m = "+(scala).toFixed(0)+"px", 10, h-10);
     }
+
+    // OCR loading indicator
+    if (ocrLoading) {
+      ctx.fillStyle = "rgba(0,0,0,0.5)";
+      ctx.fillRect(0,0,w,h);
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 16px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText("Lettura quota...", w/2, h/2);
+      ctx.textAlign = "start";
+    }
   }
 
-  useEffect(() => { requestAnimationFrame(redraw); }, [imageEl, offset, zoom, misure, puntiCorrente, selectedMisura]);
+  useEffect(() => { requestAnimationFrame(redraw); }, [imageEl, offset, zoom, misure, puntiCorrente, selectedMisura, ocrLoading]);
 
   // ── Carica immagine ──
   function loadImage(src, name) {
@@ -2848,12 +2905,23 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       const m = misure.find(mm => mm.id === selectedMisura);
       if (m) {
         const threshold = 24 / zoom;
+        // Prima controlla gli handle
         for (let i = 0; i < m.punti.length; i++) {
           if (distPx(pt, m.punti[i]) < threshold) {
             setDragHandle({ id: m.id, pointIndex: i });
             touchRef.current.moved = true;
             return;
           }
+        }
+        // Poi controlla se tocca il segmento -> drag intera misura
+        let onSegment = false;
+        for (let j = 0; j < m.punti.length - 1; j++) {
+          if (distPtSeg(pt, m.punti[j], m.punti[j+1]) < threshold) { onSegment = true; break; }
+        }
+        if (onSegment) {
+          dragMisuraRef.current = { id: m.id, startPunti: m.punti.map(p => ({...p})), startTouch: pt };
+          touchRef.current.moved = true;
+          return;
         }
       }
     }
@@ -2906,6 +2974,19 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
         return;
       }
 
+      // Drag intera misura
+      if (dragMisuraRef.current) {
+        const pt = screenToImg(t.clientX, t.clientY);
+        const dx = pt.x - dragMisuraRef.current.startTouch.x;
+        const dy = pt.y - dragMisuraRef.current.startTouch.y;
+        setMisure(prev => prev.map(m => {
+          if (m.id !== dragMisuraRef.current.id) return m;
+          return { ...m, punti: dragMisuraRef.current.startPunti.map(p => ({ x: p.x + dx, y: p.y + dy })) };
+        }));
+        touchRef.current.moved = true;
+        return;
+      }
+
       // Pan
       if (touchRef.current.startPos) {
         const dx = t.clientX - touchRef.current.startPos.x;
@@ -2922,11 +3003,24 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
 
     canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
     return () => canvas.removeEventListener('touchmove', handleTouchMove);
-  }, [dragHandle, selectedMisura, zoom, offset, misure]);
+  }, [dragHandle, selectedMisura, zoom, offset, misure, tool]);
 
   function onTouchEnd(e) {
     lastPinchDist.current = null;
     lastPinchCenter.current = null;
+
+    // Ricalcola misura dopo drag intera misura
+    if (dragMisuraRef.current) {
+      const m = misure.find(mm => mm.id === dragMisuraRef.current.id);
+      if (m) {
+        let valore = 0, label = "";
+        if (m.tipo === "linea") { valore = distMetri(m.punti[0], m.punti[1]); label = scala > 0 ? valore.toFixed(2) + " m" : valore.toFixed(0) + " px"; }
+        if (m.tipo === "angolo" && m.punti.length === 3) { valore = calcolaAngolo(m.punti[0], m.punti[1], m.punti[2]); label = valore.toFixed(1) + "\u00B0"; }
+        setMisure(prev => prev.map(mm => mm.id === m.id ? { ...mm, valore, label } : mm));
+      }
+      dragMisuraRef.current = null;
+      return;
+    }
 
     // Ricalcola misura dopo drag handle
     if (dragHandle) {
@@ -2969,6 +3063,13 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       return;
     }
 
+    if (tool === "ocr") {
+      // Leggi quota dal disegno con OCR
+      const rect = canvasRef.current?.getBoundingClientRect();
+      if (rect) leggiQuotaDaCanvas(t.clientX - rect.left, t.clientY - rect.top);
+      return;
+    }
+
     if (tool === "scala") {
       const pts = [...puntiCorrente, pt];
       setPuntiCorrente(pts);
@@ -3008,8 +3109,13 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     const threshold = 20 / zoom;
     for (let i=misure.length-1; i>=0; i--) {
       const m = misure[i];
+      // Hit su endpoint
       for (const p of m.punti) {
         if (distPx(pt,p) < threshold) return m.id;
+      }
+      // Hit su segmenti
+      for (let j=0; j<m.punti.length-1; j++) {
+        if (distPtSeg(pt, m.punti[j], m.punti[j+1]) < threshold) return m.id;
       }
     }
     return null;
@@ -3073,6 +3179,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     { id:"scala",   icon:"\uD83D\uDCCF", label:"Scala",   color:COLORS.scala },
     { id:"linea",   icon:"\uD83D\uDCCF", label:"Linea",   color:COLORS.linea },
     { id:"angolo",  icon:"\uD83D\uDCD0", label:"Angolo",  color:COLORS.angolo },
+    { id:"ocr",     icon:"\uD83D\uDD0D", label:"Leggi",   color:"#8B5CF6" },
     { id:"elimina", icon:"\uD83D\uDDD1", label:"Elimina", color:C.red },
     { id:"salva",   icon:"\uD83D\uDCBE", label:"Salva",   color:C.green },
   ];
@@ -3115,6 +3222,17 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
           </div>
         )}
 
+        {/* Info OCR */}
+        {tool === "ocr" && !ocrLoading && (
+          <div style={{ position:"absolute", top:12, left:"50%", transform:"translateX(-50%)", padding:"8px 16px", background:"rgba(139,92,246,0.85)", borderRadius:10, fontSize:12, fontWeight:700, color:"#fff", pointerEvents:"none" }}>
+            Tocca una quota nel disegno per leggerla
+          </div>
+        )}
+        {ocrLoading && (
+          <div style={{ position:"absolute", top:12, left:"50%", transform:"translateX(-50%)", padding:"8px 16px", background:"rgba(0,0,0,0.75)", borderRadius:10, fontSize:12, fontWeight:700, color:"#fff", pointerEvents:"none" }}>
+            Lettura in corso...
+          </div>
+        )}
         {/* Info punti in corso */}
         {puntiCorrente.length > 0 && (
           <div style={{ position:"absolute", top:12, left:"50%", transform:"translateX(-50%)", padding:"8px 16px", background:"rgba(0,0,0,0.75)", borderRadius:10, fontSize:13, fontWeight:700, color:"#fff", pointerEvents:"none" }}>
@@ -3202,6 +3320,28 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
             <option value="cm">Centimetri</option>
           </Sel>
           <Btn label="✓ Conferma scala" onClick={confermaScala} />
+        </Modal>
+      )}
+
+      {/* Modale risultato OCR */}
+      {showOcrResult && (
+        <Modal title="Quota trovata" onClose={() => setShowOcrResult(null)}>
+          <div style={{ textAlign:"center", marginBottom:16 }}>
+            <div style={{ fontSize:36, fontWeight:800, color:C.accent, fontFamily:"Barlow Condensed" }}>{showOcrResult.valore}</div>
+            <div style={{ fontSize:12, color:C.textMuted, marginTop:4 }}>Valore letto dal disegno</div>
+          </div>
+          <Btn label="Usa come scala (metri)" onClick={() => {
+            if (puntiCorrente.length === 2) {
+              const dist = distPx(puntiCorrente[0], puntiCorrente[1]);
+              setScala(dist / showOcrResult.valore);
+              setPuntiCorrente([]);
+              showToast("Scala impostata: 1m = " + (dist / showOcrResult.valore).toFixed(0) + "px");
+            } else {
+              showToast("Prima seleziona 2 punti con lo strumento Scala, poi usa Leggi");
+            }
+            setShowOcrResult(null);
+          }} />
+          <Btn label="Annulla" variant="secondary" onClick={() => setShowOcrResult(null)} />
         </Modal>
       )}
 
