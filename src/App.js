@@ -2510,9 +2510,8 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
   useEffect(() => {
     if (initFileUrl) {
       const ext = (initFileName || '').split('.').pop()?.toLowerCase() || '';
-      if (ext === 'pdf') { loadRemoteFile({ url: initFileUrl, nome: initFileName || 'file.pdf' }); }
-      else if (['dwg','dxf'].includes(ext)) { /* skip */ }
-      else { loadImage(initFileUrl, initFileName || ''); }
+      if (['dwg','dxf'].includes(ext)) return;
+      loadRemoteFile({ url: initFileUrl, nome: initFileName || 'file' });
     }
   }, [initFileUrl]);
 
@@ -2743,19 +2742,38 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     setShowFiles(false);
     if (ext === "pdf") {
       try {
+        // Scarica come blob per evitare problemi CORS con Firebase Storage
+        const response = await fetch(f.url);
+        const blob = await response.blob();
+        const arrayBuffer = await blob.arrayBuffer();
         const pdfjsLib = await import("pdfjs-dist/build/pdf");
         pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-        const pdf = await pdfjsLib.getDocument(f.url).promise;
+        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
         const page = await pdf.getPage(1);
         const vp = page.getViewport({ scale:2.5 });
         const tc = document.createElement("canvas");
         tc.width = vp.width; tc.height = vp.height;
         await page.render({ canvasContext:tc.getContext("2d"), viewport:vp }).promise;
         loadImage(tc.toDataURL("image/png"), f.nome);
-      } catch { alert("Errore caricamento PDF remoto"); }
+      } catch (err) { console.error("Errore PDF:", err); alert("Errore caricamento PDF"); }
       return;
     }
-    loadImage(f.url, f.nome);
+    // Per immagini: carica direttamente
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      setImageEl(img);
+      if (f.nome) setFileName(f.nome);
+      setOffset({x:0,y:0}); setZoom(1); setMisure([]); setPuntiCorrente([]); setScala(0); setSelectedMisura(null);
+    };
+    img.onerror = () => {
+      // Fallback: scarica come blob se CORS blocca
+      fetch(f.url).then(r => r.blob()).then(blob => {
+        const url = URL.createObjectURL(blob);
+        loadImage(url, f.nome);
+      }).catch(() => alert("Errore caricamento immagine"));
+    };
+    img.src = f.url;
   }
 
   // ── TOUCH HANDLERS ──
