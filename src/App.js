@@ -302,7 +302,7 @@ function Dashboard({ user, stats, onSection }) {
   const azioni = user.ruolo==="operaio" ? azioniOperaio : azioniManager;
 
   return (
-    <div style={{ paddingBottom:80 }} className="fu">
+    <div style={{ paddingBottom:80, flex:1, overflowY:"auto" }} className="fu">
       {/* Header hero */}
       <div style={{ background:`linear-gradient(160deg,${C.mid} 0%,${C.blue}80 60%,${C.bright}30 100%)`, padding:"28px 20px 24px", position:"relative", overflow:"hidden" }}>
         <div style={{ position:"absolute", top:-20, right:-20, width:140, height:140, borderRadius:"50%", background:`${C.accent}15`, pointerEvents:"none" }} />
@@ -703,7 +703,7 @@ function Cantieri({ user }) {
       return <MisuratoreDisegno user={user} projectId={sel.id} projectName={sel.clientName||sel.name} fileUrl={misuraFile.url} fileName={misuraFile.nome} onBack={() => setMisuraFile(null)} />;
     }
     return (
-      <div style={{ paddingBottom:80 }} className="fu">
+      <div style={{ paddingBottom:80, flex:1, overflowY:"auto" }} className="fu">
         {/* Header */}
         <div style={{ background:`linear-gradient(135deg,${C.mid},${C.blue}40)`, padding:"16px 16px 0", borderBottom:`1px solid ${C.border}` }}>
           <button onClick={()=>setSel(null)} style={{ background:"none", border:"none", color:C.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow", marginBottom:8 }}>← Cantieri</button>
@@ -1001,7 +1001,7 @@ function Procedure({ user }) {
   const categorie = [...new Set(list.map(p=>p.categoria))];
 
   if (sel) return (
-    <div style={{ paddingBottom:80 }} className="fu">
+    <div style={{ paddingBottom:80, flex:1, overflowY:"auto" }} className="fu">
       <div style={{ padding:"16px 16px 12px", borderBottom:`1px solid ${C.border}` }}>
         <button onClick={()=>setSel(null)} style={{ background:"none", border:"none", color:C.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow", marginBottom:8 }}>← Procedure</button>
         <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:20, marginBottom:6 }}>{sel.titolo}</div>
@@ -1227,7 +1227,7 @@ function CalendarioSettimanale({ user, targetUserId, targetUserNome, canWrite })
   const isOggi = (i) => { const d=new Date(settimana); d.setDate(d.getDate()+i); return d.toDateString()===oggi.toDateString(); };
 
   return (
-    <div style={{ paddingBottom:80 }}>
+    <div style={{ paddingBottom:80, flex:1, overflowY:"auto" }}>
       {/* Header */}
       <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:"12px 16px" }}>
         {targetUserNome && (
@@ -2141,7 +2141,7 @@ function AppuntiCantiere({ user, projectId, projectName, onBack }) {
   const tipoIcon = { nota:"📝", checklist:"✅", foto:"📷" };
 
   return (
-    <div style={{ paddingBottom:80 }} className="fu">
+    <div style={{ paddingBottom:80, flex:1, overflowY:"auto" }} className="fu">
       {/* Header */}
       <div style={{ background:`linear-gradient(135deg,${C.mid},${C.blue}40)`, padding:"14px 16px 12px", borderBottom:`1px solid ${C.border}` }}>
         <button onClick={onBack} style={{ background:"none", border:"none", color:C.accent, fontSize:13, cursor:"pointer", fontFamily:"Barlow", marginBottom:6 }}>
@@ -2742,9 +2742,9 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       // Croci sugli endpoint
       m.punti.forEach(p => {
         if (isSel) {
-          drawCross(ctx, p.x, p.y, 14/zoom, COLORS.selected, 2.5/zoom);
+          drawCross(ctx, p.x, p.y, 16/zoom, COLORS.selected, 2.5/zoom);
         } else {
-          drawCross(ctx, p.x, p.y, 8/zoom, color, 1.5/zoom);
+          drawCross(ctx, p.x, p.y, 16/zoom, "#0C447C", 2/zoom);
         }
       });
       // X rossa per eliminare
@@ -3013,8 +3013,13 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       }
     };
 
+    const handleTouchStart = (e) => { if (e.touches.length > 1) e.preventDefault(); };
+    canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
     canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-    return () => canvas.removeEventListener('touchmove', handleTouchMove);
+    return () => {
+      canvas.removeEventListener('touchstart', handleTouchStart);
+      canvas.removeEventListener('touchmove', handleTouchMove);
+    };
   }, []); // registrato una sola volta, usa refs per valori correnti
 
   function onTouchEnd(e) {
@@ -3200,7 +3205,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
   ];
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", height:"100vh", background:C.bg, position:"fixed", inset:0, zIndex:400 }}>
+    <div style={{ display:"flex", flexDirection:"column", height:"100dvh", background:C.bg, position:"fixed", inset:0, zIndex:400, overflow:"hidden", touchAction:"none" }}>
       {/* Header */}
       <div style={{ background:C.surface, borderBottom:`1px solid ${C.border}`, padding:"10px 12px", display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
         <button onClick={onBack} style={{ background:"none", border:"none", color:C.accent, fontSize:22, cursor:"pointer", padding:"4px 8px" }}>←</button>
@@ -3456,7 +3461,7 @@ export default function App() {
   const titles = { dashboard:"Dashboard", cantieri:"Cantieri", chat:"Chat", personale:"Area Personale", cronoprogramma:"Cronoprogramma", procedure:"Procedure", regolamento:"Regolamento", gestione:"Gestione", appunti_hub:"Appunti cantiere", misuratore_hub:"Misuratore" };
 
   return (
-    <div style={{ minHeight:"100vh", background:C.bg, color:C.text, fontFamily:"Barlow,sans-serif", maxWidth:480, margin:"0 auto" }}>
+    <div style={{ height:"100dvh", width:"100%", background:C.bg, color:C.text, fontFamily:"Barlow,sans-serif", maxWidth:480, margin:"0 auto", display:"flex", flexDirection:"column", overflow:"hidden", position:"relative" }}>
       <style>{globalCss}</style>
 
       {/* Header */}
@@ -3505,7 +3510,7 @@ export default function App() {
       )}
 
       {/* Bottom Nav */}
-      <nav style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:C.surface, borderTop:`1px solid ${C.border}`, display:"flex", zIndex:200 }}>
+      <nav style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:C.surface, borderTop:`1px solid ${C.border}`, display:"flex", zIndex:200, paddingBottom:"env(safe-area-inset-bottom)" }}>
         {navItems.map(n => {
           const active = n.id==="altro" ? altroItems.map(i=>i.id).includes(section) : section===n.id;
           return (
