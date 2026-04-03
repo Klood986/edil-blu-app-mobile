@@ -2114,15 +2114,42 @@ function AppuntiCantiere({ user, projectId, projectName, onBack }) {
     setSaving(false);
   };
 
-  const toggleChecklistItem = async (appunto, idx) => {
-    const nuova = appunto.checklist.map((v, i) => i === idx ? { ...v, fatto: !v.fatto } : v);
+  const [editingCheckIdx, setEditingCheckIdx] = useState(null);
+  const [editingCheckText, setEditingCheckText] = useState("");
+  const [newCheckVoce, setNewCheckVoce] = useState("");
+
+  const updateChecklist = async (appunto, nuova) => {
     await updateDoc(doc(db, 'appunti_cantiere', appunto.id), {
       checklist: nuova, updatedAt: serverTimestamp(),
     });
-    // Aggiorna anche nel modal aperto
     if (appuntoAperto && appuntoAperto.id === appunto.id) {
       setAppuntoAperto(prev => ({ ...prev, checklist: nuova }));
     }
+  };
+
+  const toggleChecklistItem = async (appunto, idx) => {
+    const nuova = appunto.checklist.map((v, i) => i === idx ? { ...v, fatto: !v.fatto } : v);
+    await updateChecklist(appunto, nuova);
+  };
+
+  const addChecklistItem = async (appunto) => {
+    if (!newCheckVoce.trim()) return;
+    const nuova = [...(appunto.checklist || []), { testo: newCheckVoce.trim(), fatto: false }];
+    await updateChecklist(appunto, nuova);
+    setNewCheckVoce("");
+  };
+
+  const removeChecklistItem = async (appunto, idx) => {
+    const nuova = appunto.checklist.filter((_, i) => i !== idx);
+    await updateChecklist(appunto, nuova);
+  };
+
+  const saveChecklistEdit = async (appunto, idx) => {
+    if (!editingCheckText.trim()) return;
+    const nuova = appunto.checklist.map((v, i) => i === idx ? { ...v, testo: editingCheckText.trim() } : v);
+    await updateChecklist(appunto, nuova);
+    setEditingCheckIdx(null);
+    setEditingCheckText("");
   };
 
   const eliminaAppunto = async (id) => {
@@ -2356,39 +2383,63 @@ function AppuntiCantiere({ user, projectId, projectName, onBack }) {
             </div>
           )}
 
-          {/* Checklist interattiva */}
-          {appuntoAperto.tipo === "checklist" && appuntoAperto.checklist?.length > 0 && (
+          {/* Checklist interattiva — editabile */}
+          {appuntoAperto.tipo === "checklist" && (
             <div style={{ marginBottom:12 }}>
-              {appuntoAperto.checklist.map((v, i) => (
-                <div key={i}
-                  onClick={() => toggleChecklistItem(appuntoAperto, i)}
-                  style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 0",
-                    borderBottom:`1px solid ${C.border}40`, cursor:"pointer" }}>
-                  <div style={{ width:22, height:22, borderRadius:6, flexShrink:0,
-                    border:`2px solid ${v.fatto?C.green:C.border}`,
-                    background:v.fatto?C.green:"transparent",
-                    display:"flex", alignItems:"center", justifyContent:"center", transition:"all .2s" }}>
+              {(appuntoAperto.checklist || []).map((v, i) => (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 0", borderBottom:`1px solid ${C.border}40` }}>
+                  <div onClick={() => toggleChecklistItem(appuntoAperto, i)}
+                    style={{ width:24, height:24, borderRadius:6, flexShrink:0,
+                      border:`2px solid ${v.fatto?C.green:C.border}`,
+                      background:v.fatto?C.green:"transparent",
+                      display:"flex", alignItems:"center", justifyContent:"center", cursor:"pointer" }}>
                     {v.fatto && <span style={{ color:"#000", fontSize:13, fontWeight:800 }}>✓</span>}
                   </div>
-                  <span style={{ fontSize:14, color:v.fatto?C.textMuted:C.text,
-                    textDecoration:v.fatto?"line-through":"none", flex:1, lineHeight:1.5 }}>
-                    {v.testo}
-                  </span>
+                  {editingCheckIdx === i ? (
+                    <div style={{ flex:1, display:"flex", gap:4 }}>
+                      <input value={editingCheckText} onChange={e => setEditingCheckText(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter") saveChecklistEdit(appuntoAperto, i); if (e.key === "Escape") setEditingCheckIdx(null); }}
+                        autoFocus
+                        style={{ flex:1, background:`${C.mid}40`, border:`1px solid ${C.accent}`, borderRadius:6, color:C.text, padding:"6px 10px", fontSize:13, fontFamily:"Barlow" }} />
+                      <button onClick={() => saveChecklistEdit(appuntoAperto, i)} style={{ background:C.green, border:"none", borderRadius:6, color:"#fff", padding:"6px 10px", fontSize:12, fontWeight:700, cursor:"pointer" }}>✓</button>
+                    </div>
+                  ) : (
+                    <span onClick={() => { setEditingCheckIdx(i); setEditingCheckText(v.testo); }}
+                      style={{ fontSize:14, color:v.fatto?C.textMuted:C.text,
+                        textDecoration:v.fatto?"line-through":"none", flex:1, lineHeight:1.5, cursor:"pointer" }}>
+                      {v.testo}
+                    </span>
+                  )}
+                  <button onClick={() => removeChecklistItem(appuntoAperto, i)}
+                    style={{ background:"none", border:"none", color:C.red, fontSize:16, cursor:"pointer", padding:"4px 6px", flexShrink:0, opacity:0.6 }}>×</button>
                 </div>
               ))}
-              {/* Barra progresso */}
-              <div style={{ marginTop:10 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:C.textMuted, marginBottom:4 }}>
-                  <span>Completate</span>
-                  <span style={{ color:C.green, fontWeight:700 }}>
-                    {appuntoAperto.checklist.filter(v=>v.fatto).length}/{appuntoAperto.checklist.length}
-                  </span>
-                </div>
-                <div style={{ height:5, borderRadius:3, background:`${C.border}80`, overflow:"hidden" }}>
-                  <div style={{ height:"100%", borderRadius:3, background:C.green, transition:"width .3s",
-                    width:`${Math.round(appuntoAperto.checklist.filter(v=>v.fatto).length/appuntoAperto.checklist.length*100)}%` }} />
-                </div>
+
+              {/* Aggiungi voce */}
+              <div style={{ display:"flex", gap:6, marginTop:10 }}>
+                <input value={newCheckVoce} onChange={e => setNewCheckVoce(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") addChecklistItem(appuntoAperto); }}
+                  placeholder="Aggiungi voce..."
+                  style={{ flex:1, background:`${C.mid}40`, border:`1px solid ${C.border}`, borderRadius:8, color:C.text, padding:"10px 12px", fontSize:13, fontFamily:"Barlow" }} />
+                <button onClick={() => addChecklistItem(appuntoAperto)} disabled={!newCheckVoce.trim()}
+                  style={{ background:C.green, border:"none", borderRadius:8, color:"#fff", padding:"10px 14px", fontSize:13, fontWeight:700, cursor:"pointer", opacity:newCheckVoce.trim()?1:0.4 }}>+</button>
               </div>
+
+              {/* Barra progresso */}
+              {appuntoAperto.checklist?.length > 0 && (
+                <div style={{ marginTop:12 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", fontSize:11, color:C.textMuted, marginBottom:4 }}>
+                    <span>Completate</span>
+                    <span style={{ color:C.green, fontWeight:700 }}>
+                      {appuntoAperto.checklist.filter(v=>v.fatto).length}/{appuntoAperto.checklist.length}
+                    </span>
+                  </div>
+                  <div style={{ height:5, borderRadius:3, background:`${C.border}80`, overflow:"hidden" }}>
+                    <div style={{ height:"100%", borderRadius:3, background:C.green, transition:"width .3s",
+                      width:`${Math.round(appuntoAperto.checklist.filter(v=>v.fatto).length/appuntoAperto.checklist.length*100)}%` }} />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
