@@ -2712,8 +2712,8 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     }
     if (file.type === "application/pdf" || ext === "pdf") {
       try {
-        const pdfjsLib = await import("pdfjs-dist/build/pdf");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        const pdfjsLib = await import("pdfjs-dist/build/pdf.mjs");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
         const ab = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(ab) }).promise;
         const page = await pdf.getPage(1);
@@ -2746,8 +2746,8 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
         const response = await fetch(f.url);
         const blob = await response.blob();
         const arrayBuffer = await blob.arrayBuffer();
-        const pdfjsLib = await import("pdfjs-dist/build/pdf");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        const pdfjsLib = await import("pdfjs-dist/build/pdf.mjs");
+        pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
         const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
         const page = await pdf.getPage(1);
         const vp = page.getViewport({ scale:2.5 });
