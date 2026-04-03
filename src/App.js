@@ -2460,6 +2460,23 @@ function MisuratoreHub({ user, onSelect }) {
 }
 
 // ─── MISURATORE DISEGNO ──────────────────────────────────────────────────────
+
+// Carica pdfjs da CDN (evita problemi di bundling con CRA/Webpack)
+function loadPdfjsCDN() {
+  return new Promise((resolve, reject) => {
+    if (window.pdfjsLib) { resolve(window.pdfjsLib); return; }
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    script.onload = () => {
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      resolve(window.pdfjsLib);
+    };
+    script.onerror = () => reject(new Error('Impossibile caricare il lettore PDF'));
+    document.head.appendChild(script);
+  });
+}
+
 function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: initFileUrl, fileName: initFileName }) {
   const canvasRef = useRef(null);
   const containerRef = useRef(null);
@@ -2712,8 +2729,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     }
     if (file.type === "application/pdf" || ext === "pdf") {
       try {
-        const pdfjsLib = await import("pdfjs-dist/build/pdf.mjs");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = process.env.PUBLIC_URL + "/pdf.worker.min.mjs";
+        const pdfjsLib = await loadPdfjsCDN();
         const ab = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(ab) }).promise;
         const page = await pdf.getPage(1);
@@ -2746,8 +2762,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
         const response = await fetch(f.url);
         const blob = await response.blob();
         const arrayBuffer = await blob.arrayBuffer();
-        const pdfjsLib = await import("pdfjs-dist/build/pdf.mjs");
-        pdfjsLib.GlobalWorkerOptions.workerSrc = process.env.PUBLIC_URL + "/pdf.worker.min.mjs";
+        const pdfjsLib = await loadPdfjsCDN();
         const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
         const page = await pdf.getPage(1);
         const vp = page.getViewport({ scale:2.5 });
