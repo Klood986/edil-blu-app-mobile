@@ -2739,8 +2739,8 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
         await page.render({ canvasContext:tc.getContext("2d"), viewport:vp }).promise;
         loadImage(tc.toDataURL("image/png"), file.name);
       } catch (err) {
-        console.error(err);
-        alert("Errore nel caricamento del PDF");
+        console.error("Errore PDF locale:", err);
+        alert("Errore nel caricamento del PDF: " + (err.message || err));
       }
       return;
     }
@@ -2770,7 +2770,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
         tc.width = vp.width; tc.height = vp.height;
         await page.render({ canvasContext:tc.getContext("2d"), viewport:vp }).promise;
         loadImage(tc.toDataURL("image/png"), f.nome);
-      } catch (err) { console.error("Errore PDF:", err); alert("Errore caricamento PDF"); }
+      } catch (err) { console.error("Errore PDF remoto:", err); alert("Errore caricamento PDF: " + (err.message || err)); }
       return;
     }
     // Per immagini: carica direttamente
