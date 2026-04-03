@@ -2774,32 +2774,28 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     setShowFiles(false);
     if (ext === "pdf") {
       try {
-        const arrayBuffer = await fetchPdfAsBuffer(f.url);
+        // Carica PDF direttamente con pdfjs passando l'URL — evita fetch/CORS
         const pdfjsLib = await loadPdfjsCDN();
-        const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(arrayBuffer) }).promise;
+        const pdf = await pdfjsLib.getDocument({ url: f.url, withCredentials: false }).promise;
         const page = await pdf.getPage(1);
         const vp = page.getViewport({ scale: 2 });
         const tc = document.createElement("canvas");
         tc.width = vp.width; tc.height = vp.height;
         await page.render({ canvasContext: tc.getContext("2d"), viewport: vp }).promise;
         loadImage(tc.toDataURL("image/png"), f.nome);
-      } catch (err) { console.error("Errore PDF remoto:", err); alert("Errore PDF: " + (err.message || err) + "\nURL: " + (f.url || "").substring(0, 80)); }
+      } catch (err) { console.error("Errore PDF remoto:", err); alert("Errore PDF: " + (err.message || err)); }
       return;
     }
-    // Per immagini: carica direttamente
+    // Per immagini: carica con crossOrigin
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.onload = () => {
-      setImageEl(img);
-      if (f.nome) setFileName(f.nome);
-      setOffset({x:0,y:0}); setZoom(1); setMisure([]); setPuntiCorrente([]); setScala(0); setSelectedMisura(null);
-    };
+    img.onload = () => loadImage(img.src, f.nome);
     img.onerror = () => {
-      // Fallback: scarica come blob se CORS blocca
-      fetch(f.url).then(r => r.blob()).then(blob => {
-        const url = URL.createObjectURL(blob);
-        loadImage(url, f.nome);
-      }).catch(() => alert("Errore caricamento immagine"));
+      // Fallback senza crossOrigin
+      const img2 = new Image();
+      img2.onload = () => loadImage(img2.src, f.nome);
+      img2.onerror = () => alert("Errore caricamento immagine");
+      img2.src = f.url;
     };
     img.src = f.url;
   }
