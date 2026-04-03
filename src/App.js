@@ -2927,6 +2927,10 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     }
   }
 
+  // Refs per valori usati nel touchmove listener (evita stale closures)
+  const stateRef = useRef({ zoom: 1, offset: { x: 0, y: 0 }, dragHandle: null });
+  stateRef.current = { zoom, offset, dragHandle };
+
   // addEventListener manuale con passive:false per preventDefault
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -2935,6 +2939,14 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     const handleTouchMove = (e) => {
       e.preventDefault();
       const touches = e.touches;
+      const { zoom: z, offset: off } = stateRef.current;
+      const dh = stateRef.current.dragHandle;
+
+      // screenToImg con valori correnti
+      function s2i(sx, sy) {
+        const rect = canvas.getBoundingClientRect();
+        return { x: (sx - rect.left - off.x) / z, y: (sy - rect.top - off.y) / z };
+      }
 
       // Pinch zoom fluido centrato sul punto di pinch
       if (touches.length === 2 && lastPinchDist.current) {
@@ -2963,11 +2975,11 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       const t = touches[0];
 
       // Drag handle
-      if (dragHandle) {
-        const pt = screenToImg(t.clientX, t.clientY);
+      if (dh) {
+        const pt = s2i(t.clientX, t.clientY);
         setMisure(prev => prev.map(m => {
-          if (m.id !== dragHandle.id) return m;
-          const np = [...m.punti]; np[dragHandle.pointIndex] = pt;
+          if (m.id !== dh.id) return m;
+          const np = [...m.punti]; np[dh.pointIndex] = pt;
           return { ...m, punti: np };
         }));
         touchRef.current.moved = true;
@@ -2976,7 +2988,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
 
       // Drag intera misura
       if (dragMisuraRef.current) {
-        const pt = screenToImg(t.clientX, t.clientY);
+        const pt = s2i(t.clientX, t.clientY);
         const dx = pt.x - dragMisuraRef.current.startTouch.x;
         const dy = pt.y - dragMisuraRef.current.startTouch.y;
         setMisure(prev => prev.map(m => {
@@ -3003,7 +3015,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
 
     canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
     return () => canvas.removeEventListener('touchmove', handleTouchMove);
-  }, [dragHandle, selectedMisura, zoom, offset, misure, tool]);
+  }, []); // registrato una sola volta, usa refs per valori correnti
 
   function onTouchEnd(e) {
     lastPinchDist.current = null;
@@ -3083,10 +3095,11 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       if (pts.length === 2) {
         const dist = distMetri(pts[0], pts[1]);
         const label = scala > 0 ? dist.toFixed(2) + " m" : dist.toFixed(0) + " px";
-        setMisure(prev => [...prev, { id: "m_" + Date.now(), tipo: "linea", punti: pts, valore: dist, label, colore: COLORS.linea }]);
+        const newId = "m_" + Date.now();
+        setMisure(prev => [...prev, { id: newId, tipo: "linea", punti: pts, valore: dist, label, colore: COLORS.linea }]);
         setPuntiCorrente([]);
+        setSelectedMisura(newId);
         setTool("select");
-        setSelectedMisura("m_" + (Date.now() - 1)); // non perfetto ma approssima
       }
       return;
     }
@@ -3097,8 +3110,10 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       if (pts.length === 3) {
         const gradi = calcolaAngolo(pts[0], pts[1], pts[2]);
         const label = gradi.toFixed(1) + "\u00B0";
-        setMisure(prev => [...prev, { id: "m_" + Date.now(), tipo: "angolo", punti: pts, valore: gradi, label, colore: COLORS.angolo }]);
+        const newId = "m_" + Date.now();
+        setMisure(prev => [...prev, { id: newId, tipo: "angolo", punti: pts, valore: gradi, label, colore: COLORS.angolo }]);
         setPuntiCorrente([]);
+        setSelectedMisura(newId);
         setTool("select");
       }
       return;
