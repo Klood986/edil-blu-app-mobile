@@ -2506,6 +2506,9 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
   const [offset, setOffset] = useState({ x:0, y:0 });
   const [zoom, setZoom] = useState(1);
   const [scala, setScala] = useState(0); // px per metro
+  const [scalaPunti, setScalaPunti] = useState([]); // i 2 punti usati per la scala
+  const [scalaMetri, setScalaMetri] = useState(0); // misura reale inserita
+  const [dragScala, setDragScala] = useState(null); // { pointIndex }
 
   // Misure e punti
   const [misure, setMisure] = useState([]);
@@ -2609,7 +2612,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     ctx.moveTo(x, y - size); ctx.lineTo(x, y + size);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(x, y, 3/zoom, 0, Math.PI*2);
+    ctx.arc(x, y, 4/zoom, 0, Math.PI*2);
     ctx.fillStyle = color;
     ctx.fill();
     ctx.restore();
@@ -2739,17 +2742,16 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       ctx.fillStyle = color;
       ctx.fillText(m.label, lp.x-tm.width/2, lp.y);
 
-      // Croci sugli endpoint — grandi per dita grosse
+      // Croci sugli endpoint — extra grandi per dita grosse da cantiere
       m.punti.forEach(p => {
         if (isSel) {
-          // Cerchio area di aggancio (zona tappabile) semitrasparente
-          ctx.beginPath(); ctx.arc(p.x, p.y, 40/zoom, 0, Math.PI*2);
+          ctx.beginPath(); ctx.arc(p.x, p.y, 44/zoom, 0, Math.PI*2);
           ctx.fillStyle = COLORS.selected + "12"; ctx.fill();
           ctx.strokeStyle = COLORS.selected + "30"; ctx.lineWidth = 1/zoom; ctx.stroke();
-          drawCross(ctx, p.x, p.y, 30/zoom, COLORS.selected, 3.5/zoom);
+          drawCross(ctx, p.x, p.y, 36/zoom, COLORS.selected, 4/zoom);
         } else {
           const crossColor = m.tipo === "scala" ? "#000000" : "#0C447C";
-          drawCross(ctx, p.x, p.y, 28/zoom, crossColor, 2.5/zoom);
+          drawCross(ctx, p.x, p.y, 34/zoom, crossColor, 3/zoom);
         }
       });
       // X rossa per eliminare
@@ -2777,7 +2779,34 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       ctx.stroke();
       ctx.setLineDash([]);
       const crossCol = tool === "scala" ? "#000" : "#fff";
-      puntiCorrente.forEach(p => drawCross(ctx, p.x, p.y, 28/zoom, crossCol, 3/zoom));
+      puntiCorrente.forEach(p => drawCross(ctx, p.x, p.y, 34/zoom, crossCol, 3.5/zoom));
+      ctx.restore();
+    }
+
+    // Punti scala sul canvas (trascinabili)
+    if (scalaPunti.length === 2) {
+      ctx.save();
+      ctx.translate(offset.x, offset.y);
+      ctx.scale(zoom, zoom);
+      // Linea tratteggiata arancio tra i 2 punti scala
+      ctx.strokeStyle = "#D85A30";
+      ctx.lineWidth = 2/zoom;
+      ctx.setLineDash([6/zoom, 4/zoom]);
+      ctx.beginPath();
+      ctx.moveTo(scalaPunti[0].x, scalaPunti[0].y);
+      ctx.lineTo(scalaPunti[1].x, scalaPunti[1].y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // Croci nere sui punti
+      scalaPunti.forEach(p => drawCross(ctx, p.x, p.y, 34/zoom, "#000", 3/zoom));
+      // Label scala al centro
+      const slp = { x:(scalaPunti[0].x+scalaPunti[1].x)/2, y:(scalaPunti[0].y+scalaPunti[1].y)/2 };
+      ctx.font = "bold "+12/zoom+"px sans-serif";
+      const stm = ctx.measureText(scalaMetri+"m");
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fillRect(slp.x-stm.width/2-4/zoom, slp.y-11/zoom, stm.width+8/zoom, 14/zoom);
+      ctx.fillStyle = "#D85A30";
+      ctx.fillText(scalaMetri+"m", slp.x-stm.width/2, slp.y);
       ctx.restore();
     }
 
@@ -2800,7 +2829,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     }
   }
 
-  useEffect(() => { requestAnimationFrame(redraw); }, [imageEl, offset, zoom, misure, puntiCorrente, selectedMisura, ocrLoading]);
+  useEffect(() => { requestAnimationFrame(redraw); }, [imageEl, offset, zoom, misure, puntiCorrente, selectedMisura, ocrLoading, scalaPunti]);
 
   // ── Carica immagine ──
   function loadImage(src, name) {
@@ -2905,6 +2934,19 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       moved: false,
     };
 
+    // Check drag punti scala
+    if (scalaPunti.length === 2) {
+      const pt = screenToImg(t.clientX, t.clientY);
+      const scalaThreshold = 44 / zoom;
+      for (let i = 0; i < 2; i++) {
+        if (distPx(pt, scalaPunti[i]) < scalaThreshold) {
+          setDragScala({ pointIndex: i });
+          touchRef.current.moved = true;
+          return;
+        }
+      }
+    }
+
     // Check handle della misura selezionata (raggio grande per touch)
     if (selectedMisura) {
       const pt = screenToImg(t.clientX, t.clientY);
@@ -2935,7 +2977,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
 
   // Refs per valori usati nel touchmove listener (evita stale closures)
   const stateRef = useRef({ zoom: 1, offset: { x: 0, y: 0 }, dragHandle: null });
-  stateRef.current = { zoom, offset, dragHandle };
+  stateRef.current = { zoom, offset, dragHandle, dragScala };
 
   // addEventListener manuale con passive:false per preventDefault
   useEffect(() => {
@@ -2979,6 +3021,17 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       }
 
       const t = touches[0];
+
+      // Drag punto scala
+      const ds = stateRef.current.dragScala;
+      if (ds) {
+        const pt = s2i(t.clientX, t.clientY);
+        setScalaPunti(prev => {
+          const np = [...prev]; np[ds.pointIndex] = pt; return np;
+        });
+        touchRef.current.moved = true;
+        return;
+      }
 
       // Drag handle
       if (dh) {
@@ -3031,6 +3084,17 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
   function onTouchEnd(e) {
     lastPinchDist.current = null;
     lastPinchCenter.current = null;
+
+    // Ricalcola scala dopo drag punto scala
+    if (dragScala) {
+      if (scalaPunti.length === 2 && scalaMetri > 0) {
+        const dist = distPx(scalaPunti[0], scalaPunti[1]);
+        setScala(dist / scalaMetri);
+        showToast("Scala aggiornata");
+      }
+      setDragScala(null);
+      return;
+    }
 
     // Ricalcola misura dopo drag intera misura
     if (dragMisuraRef.current) {
@@ -3147,17 +3211,22 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
     return null;
   }
 
-  // Conferma scala
+  // Conferma scala (nuova o modifica valore)
   function confermaScala() {
-    if (!scalaVal || Number(scalaVal) <= 0 || puntiCorrente.length < 2) return;
+    if (!scalaVal || Number(scalaVal) <= 0) return;
     let valMetri = Number(scalaVal);
     if (scalaUnit === "cm") valMetri /= 100;
-    const dist = distPx(puntiCorrente[0], puntiCorrente[1]);
+    // Usa puntiCorrente se disponibili, altrimenti quelli salvati
+    const pts = puntiCorrente.length >= 2 ? [puntiCorrente[0], puntiCorrente[1]] : scalaPunti;
+    if (pts.length < 2) return;
+    const dist = distPx(pts[0], pts[1]);
     setScala(dist / valMetri);
+    setScalaPunti(pts);
+    setScalaMetri(valMetri);
     setPuntiCorrente([]);
     setShowScalaModal(false);
     setScalaVal("");
-    showToast("Scala impostata: 1m = "+(dist/valMetri).toFixed(0)+"px");
+    showToast("Scala: " + valMetri + "m = " + dist.toFixed(0) + "px");
   }
 
   // Salva misura al libretto
@@ -3219,7 +3288,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
           <div style={{ fontWeight:700, fontSize:14, color:C.text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{projectName}</div>
           {fileName && <div style={{ fontSize:10, color:C.textMuted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{fileName}</div>}
         </div>
-        {scala > 0 && <span style={{ fontSize:10, color:COLORS.scala, fontWeight:700 }}>Scala OK</span>}
+        {scala > 0 && <button onClick={() => { setScalaVal(String(scalaMetri)); setShowScalaModal(true); }} style={{ fontSize:10, color:COLORS.scala, fontWeight:700, background:COLORS.scala+"15", border:"1px solid "+COLORS.scala+"40", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontFamily:"Barlow" }}>{scalaMetri}m ✏️</button>}
       </div>
 
       {/* File buttons */}
