@@ -152,18 +152,28 @@ function Empty({ icon, msg }) {
 }
 
 // ─── SPLASH SCREEN ────────────────────────────────────────────────────────────
+const splashKeyframes = `
+  @keyframes splashFadeScale { from { opacity:0; transform:scale(0.8); } to { opacity:1; transform:scale(1); } }
+  @keyframes splashSlideUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes splashLoadBar { from { width:0%; } to { width:100%; } }
+`;
+
 function SplashScreen() {
   return (
-    <div style={{ position:"fixed", inset:0, background:C.bg, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:9999 }}>
-      <div className="splash-logo" style={{ textAlign:"center" }}>
-        <div style={{ width:100, height:100, borderRadius:28, background:`linear-gradient(135deg,${C.blue},${C.accent})`, margin:"0 auto 20px", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 12px 48px ${C.blue}80`, fontSize:52 }}>🏗</div>
-        <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:42, color:C.text, letterSpacing:3 }}>EDIL BLU</div>
-        <div style={{ fontSize:11, color:C.accent, letterSpacing:4, textTransform:"uppercase", marginTop:6 }}>Gestionale Aziendale</div>
+    <div style={{ position:"fixed", inset:0, background:"linear-gradient(135deg, #070f1e 0%, #0d1f3c 50%, #1a3a6b 100%)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:9999 }}>
+      <style>{splashKeyframes}</style>
+      <div style={{ animation:"splashFadeScale 0.8s ease-out forwards", textAlign:"center", marginBottom:24 }}>
+        <div style={{ width:100, height:100, borderRadius:28, background:"linear-gradient(135deg, #1a3a6b, #4a9eff)", margin:"0 auto 16px", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 16px 64px rgba(74,158,255,0.4)", fontSize:52 }}>🏗</div>
+        <div style={{ fontSize:38, fontWeight:900, letterSpacing:8, color:"#ffffff", fontFamily:"Barlow Condensed, sans-serif" }}>EDIL BLU</div>
       </div>
-      <div style={{ marginTop:48, display:"flex", gap:6 }}>
-        {[0,1,2].map(i => (
-          <div key={i} style={{ width:6, height:6, borderRadius:"50%", background:C.accent, opacity:0.3, animation:`pulse 1.2s ease ${i*0.2}s infinite` }} />
-        ))}
+      <div style={{ animation:"splashSlideUp 0.6s ease-out 0.5s both", fontSize:13, color:"#4a9eff", letterSpacing:4, textTransform:"uppercase", marginBottom:48 }}>
+        Gestione Cantieri
+      </div>
+      <div style={{ width:200, height:3, background:"rgba(255,255,255,0.1)", borderRadius:2, overflow:"hidden" }}>
+        <div style={{ height:"100%", background:"linear-gradient(90deg, #4a9eff, #38bdf8)", animation:"splashLoadBar 2s ease-in-out forwards", borderRadius:2 }} />
+      </div>
+      <div style={{ position:"absolute", bottom:40, fontSize:11, color:"rgba(255,255,255,0.25)", animation:"splashSlideUp 0.6s ease-out 1s both" }}>
+        v2.0 — Edil Blu ERP
       </div>
     </div>
   );
@@ -255,14 +265,18 @@ function Dashboard({ user, stats, onSection }) {
   const [ferieAlert, setFerieAlert] = useState([]);
   const [rapAlert, setRapAlert] = useState([]);
   const [showRapForm, setShowRapForm] = useState(false);
+  const [cantiereOggi, setCantiereOggi] = useState(null);
+  const [incarichi, setIncarichi] = useState([]);
+  const [ultimiRap, setUltimiRap] = useState([]);
 
-  const oggi = new Date().toLocaleDateString("it-IT", { weekday:"long", day:"numeric", month:"long" });
+  const oggi = new Date().toLocaleDateString("it-IT", { weekday:"long", day:"numeric", month:"long", year:"numeric" });
   const ora = new Date().getHours();
   const saluto = ora < 12 ? "Buongiorno" : ora < 18 ? "Buon pomeriggio" : "Buonasera";
+  const todayStr = new Date().toISOString().split("T")[0];
 
   useEffect(() => {
     if (isManager(user.ruolo)) {
-      getDocs(query(collection(db,"ferie"),where("stato","==","in attesa")))
+      getDocs(query(collection(db,"richieste_assenza"),where("stato","==","in_attesa")))
         .then(s=>setFerieAlert(s.docs.map(d=>({id:d.id,...d.data()}))));
     }
     if (canEdit(user.ruolo)) {
@@ -270,7 +284,16 @@ function Dashboard({ user, stats, onSection }) {
       getDocs(query(collection(db,"timesheets"),where("date",">=",ieri)))
         .then(s=>setRapAlert(s.docs.map(d=>({id:d.id,...d.data()}))));
     }
-  }, [user.ruolo]);
+    // Cantiere di oggi
+    getDocs(query(collection(db,"assegnazioni_manuali"),where("operaioId","==",user.uid),where("data","==",todayStr)))
+      .then(s => { if (s.docs.length > 0) setCantiereOggi(s.docs[0].data()) }).catch(()=>{});
+    // Incarichi miei aperti
+    getDocs(query(collection(db,"incarichi"),where("assegnatoA","==",user.uid)))
+      .then(s => setIncarichi(s.docs.map(d=>d.data()).filter(i=>i.stato!=="completato"&&i.stato!=="confermato"))).catch(()=>{});
+    // Ultimi rapportini
+    getDocs(query(collection(db,"timesheets"),where("workerId","==",user.uid),orderBy("date","desc")))
+      .then(s => setUltimiRap(s.docs.slice(0,5).map(d=>({id:d.id,...d.data()})))).catch(()=>{});
+  }, [user.ruolo, user.uid]);
 
   // Path SVG per icone
   const P = {
@@ -340,6 +363,32 @@ function Dashboard({ user, stats, onSection }) {
           </div>
         )}
 
+        {/* Cantiere di oggi */}
+        {cantiereOggi && (
+          <div onClick={()=>onSection("cantieri")} style={{ background:`linear-gradient(135deg, ${C.blue}60, ${C.accent}40)`, border:`1px solid ${C.accent}50`, borderRadius:14, padding:"16px 18px", marginBottom:16, cursor:"pointer" }}>
+            <div style={{ fontSize:11, color:"#a8d4f0", marginBottom:6 }}>📍 Oggi sei a:</div>
+            <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:22, color:C.text, marginBottom:4 }}>{cantiereOggi.cantiereName||cantiereOggi.projectName||"Cantiere"}</div>
+            {cantiereOggi.indirizzo && <div style={{ fontSize:12, color:"#a8d4f0cc" }}>{cantiereOggi.indirizzo}</div>}
+            {cantiereOggi.lavorazione && <div style={{ fontSize:11, color:C.accent, marginTop:6, fontWeight:600 }}>{cantiereOggi.lavorazione}</div>}
+          </div>
+        )}
+        {!cantiereOggi && user.ruolo === "operaio" && (
+          <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"14px 18px", marginBottom:16, textAlign:"center" }}>
+            <div style={{ fontSize:13, color:C.textMuted }}>Nessun cantiere programmato oggi</div>
+          </div>
+        )}
+
+        {/* Incarichi in sospeso */}
+        {incarichi.length > 0 && (
+          <div onClick={()=>onSection("personale")} style={{ background:`${C.gold}12`, border:`1px solid ${C.gold}40`, borderRadius:14, padding:"14px 16px", marginBottom:16, cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
+            <div style={{ width:40, height:40, borderRadius:12, background:`${C.gold}20`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>⚡</div>
+            <div style={{ flex:1 }}>
+              <div style={{ fontWeight:700, fontSize:13, color:C.gold }}>{incarichi.length} incaric{incarichi.length===1?"o":"hi"} in attesa</div>
+              <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{incarichi.slice(0,2).map(i=>i.titolo).join(" · ")}</div>
+            </div>
+          </div>
+        )}
+
         {/* Azioni rapide */}
         <div style={{ fontSize:10, fontWeight:800, color:C.textMuted, letterSpacing:2, textTransform:"uppercase", marginBottom:14 }}>Accesso Rapido</div>
         <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:24 }}>
@@ -378,6 +427,20 @@ function Dashboard({ user, stats, onSection }) {
                 </div>
               ))}
             </div>
+          </>
+        )}
+
+        {/* Ultimi rapportini */}
+        {ultimiRap.length > 0 && (
+          <>
+            <div style={{ fontSize:10, fontWeight:800, color:C.textMuted, letterSpacing:2, textTransform:"uppercase", marginBottom:12, marginTop:24 }}>Ultimi rapportini</div>
+            {ultimiRap.map(r => (
+              <div key={r.id} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 14px", marginBottom:6, display:"flex", alignItems:"center", gap:10 }}>
+                <div style={{ fontSize:11, color:C.textMuted, minWidth:60 }}>{r.date?.toDate?.()?.toLocaleDateString("it-IT")||r.date||""}</div>
+                <div style={{ flex:1, fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.projectName||r.cantiere||"—"}</div>
+                <div style={{ fontSize:12, color:C.accent, fontWeight:700 }}>{r.totaleOre||r.hoursWorked||"—"}h</div>
+              </div>
+            ))}
           </>
         )}
       </div>
