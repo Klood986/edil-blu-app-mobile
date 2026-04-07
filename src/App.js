@@ -916,7 +916,7 @@ function Cantieri({ user }) {
 
   // Lista cantieri
   return (
-    <div style={{ padding:"16px 16px 80px" }} className="fu">
+    <div style={{ paddingBottom:80, flex:1, overflowY:"auto", padding:"16px 16px 80px" }} className="fu">
       <SecTitle label={`${list.length} commesse`} />
       {list.length===0 && <Empty icon="🏗" msg="Nessuna commessa ancora" />}
       {list.map(c => (
@@ -986,17 +986,26 @@ function Procedure({ user }) {
   const [form, setForm] = useState({ titolo:"", categoria:"Muratura", testo:"" });
   const canMod = isManager(user.ruolo);
 
+  const [search, setSearch] = useState("");
+  const [catFilt, setCatFilt] = useState("Tutte");
+
   useEffect(() => {
-    const unsub = onSnapshot(collection(db,"procedure"), s=>setList(s.docs.map(d=>({id:d.id,...d.data()}))));
+    const unsub = onSnapshot(collection(db,"procedure_lavorazioni"), s=>setList(s.docs.map(d=>({id:d.id,...d.data()}))));
     return unsub;
   }, []);
 
   const crea = async () => {
     if (!form.titolo) return;
-    await addDoc(collection(db,"procedure"), { ...form, createdBy:user.nome, createdAt:serverTimestamp() });
+    await addDoc(collection(db,"procedure_lavorazioni"), { ...form, createdBy:user.nome, createdAt:serverTimestamp() });
     setShowForm(false);
     setForm({ titolo:"", categoria:"Muratura", testo:"" });
   };
+
+  const filteredProc = list.filter(p => {
+    if (catFilt !== "Tutte" && p.categoria !== catFilt) return false;
+    if (search && !p.titolo?.toLowerCase().includes(search.toLowerCase())) return false;
+    return true;
+  });
 
   const categorie = [...new Set(list.map(p=>p.categoria))];
 
@@ -1008,29 +1017,70 @@ function Procedure({ user }) {
         <span style={{ background:C.accentDim, color:C.accent, borderRadius:4, padding:"2px 8px", fontSize:10, fontWeight:700 }}>{sel.categoria}</span>
       </div>
       <div style={{ padding:16 }}>
-        <div style={{ fontSize:14, color:C.textDim, lineHeight:1.8, whiteSpace:"pre-wrap" }}>{sel.testo}</div>
+        {sel.testo && <div style={{ fontSize:14, color:C.textDim, lineHeight:1.8, whiteSpace:"pre-wrap", marginBottom:16 }}>{sel.testo}</div>}
+        {sel.noteSicurezza && (
+          <Card style={{ background:"#FF000010", border:`1px solid #FF000030` }}>
+            <div style={{ fontWeight:700, fontSize:12, color:"#D00", marginBottom:6 }}>⚠ SICUREZZA</div>
+            <div style={{ fontSize:13, color:"#B00", lineHeight:1.6, whiteSpace:"pre-wrap" }}>{sel.noteSicurezza}</div>
+          </Card>
+        )}
+        {sel.steps?.length > 0 && (
+          <div style={{ marginBottom:16 }}>
+            <div style={{ fontWeight:700, fontSize:13, color:C.accent, marginBottom:8 }}>Procedura operativa</div>
+            {sel.steps.map((s,i) => (
+              <div key={i} style={{ display:"flex", gap:10, marginBottom:8 }}>
+                <div style={{ width:24, height:24, borderRadius:12, background:C.accentDim, color:C.accent, display:"flex", alignItems:"center", justifyContent:"center", fontSize:12, fontWeight:800, flexShrink:0 }}>{i+1}</div>
+                <div style={{ fontSize:13, color:C.textDim, lineHeight:1.6, flex:1 }}>{s}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {sel.materiali?.length > 0 && (
+          <div style={{ marginBottom:16 }}>
+            <div style={{ fontWeight:700, fontSize:13, marginBottom:6 }}>🧱 Materiali necessari</div>
+            {sel.materiali.map((m,i) => <div key={i} style={{ fontSize:13, color:C.textDim, padding:"3px 0" }}>• {m}</div>)}
+          </div>
+        )}
+        {sel.attrezzature?.length > 0 && (
+          <div style={{ marginBottom:16 }}>
+            <div style={{ fontWeight:700, fontSize:13, marginBottom:6 }}>🔧 Attrezzature</div>
+            {sel.attrezzature.map((a,i) => <div key={i} style={{ fontSize:13, color:C.textDim, padding:"3px 0" }}>• {a}</div>)}
+          </div>
+        )}
+        {sel.tempistiche && <div style={{ fontSize:12, color:C.textMuted, marginTop:8 }}>⏱ Tempistiche: {sel.tempistiche}</div>}
       </div>
     </div>
   );
 
   return (
-    <div style={{ padding:"16px 16px 80px" }} className="fu">
+    <div style={{ paddingBottom:80, flex:1, overflowY:"auto", padding:"16px 16px 80px" }} className="fu">
       {canMod && <Btn label="+ Nuova Procedura" onClick={()=>setShowForm(true)} icon="📋" />}
-      {list.length===0 && <Empty icon="📋" msg="Nessuna procedura ancora" />}
-      {categorie.map(cat => (
+      <input placeholder="Cerca lavorazione..." value={search} onChange={e=>setSearch(e.target.value)}
+        style={{ width:"100%", padding:"10px 14px", fontSize:14, border:`1px solid ${C.border}`, borderRadius:10, background:C.surface, color:C.text, marginBottom:10, boxSizing:"border-box", fontFamily:"Barlow" }} />
+      <div style={{ display:"flex", gap:6, marginBottom:12, overflowX:"auto", flexWrap:"nowrap" }}>
+        {["Tutte",...categorie].map(c => (
+          <button key={c} onClick={()=>setCatFilt(c)} style={{ padding:"5px 12px", fontSize:11, fontWeight:600, border:`1px solid ${catFilt===c?C.accent:C.border}`, borderRadius:6, background:catFilt===c?C.accentDim:"transparent", color:catFilt===c?C.accent:C.textMuted, cursor:"pointer", whiteSpace:"nowrap", fontFamily:"Barlow" }}>{c}</button>
+        ))}
+      </div>
+      {filteredProc.length===0 && <Empty icon="📋" msg={list.length===0?"Nessuna procedura ancora":"Nessun risultato"} />}
+      {categorie.filter(c=>catFilt==="Tutte"||c===catFilt).map(cat => {
+        const items = filteredProc.filter(p=>p.categoria===cat);
+        if (items.length===0) return null;
+        return (
         <div key={cat}>
           <SecTitle label={cat} />
-          {list.filter(p=>p.categoria===cat).map(p => (
+          {items.map(p => (
             <Card key={p.id} onClick={()=>setSel(p)}>
               <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                 <div style={{ fontWeight:600, fontSize:14 }}>{p.titolo}</div>
                 <span style={{ color:C.accent, fontSize:20 }}>›</span>
               </div>
-              <div style={{ fontSize:11, color:C.textMuted, marginTop:4 }}>di {p.createdBy}</div>
+              <div style={{ fontSize:11, color:C.textMuted, marginTop:4 }}>{p.tempistiche||""}</div>
             </Card>
           ))}
         </div>
-      ))}
+        );
+      })}
       {showForm && (
         <Modal title="Nuova Procedura" onClose={()=>setShowForm(false)}>
           <Inp placeholder="Titolo" value={form.titolo} onChange={e=>setForm({...form,titolo:e.target.value})} />
@@ -1467,30 +1517,35 @@ function AreaPersonale({ user }) {
 
   useEffect(() => {
     getDocs(query(collection(db,"timesheets"),where("workerId","==",user.uid),orderBy("date","desc"))).then(s=>setRapportini(s.docs.map(d=>({id:d.id,...d.data()}))));
-    getDocs(query(collection(db,"ferie"),where("userId","==",user.uid))).then(s=>setFerie(s.docs.map(d=>({id:d.id,...d.data()}))));
-    getDocs(query(collection(db,"buste"),where("userId","==",user.uid))).then(s=>setBuste(s.docs.map(d=>({id:d.id,...d.data()}))));
+    getDocs(query(collection(db,"richieste_assenza"),where("operaioId","==",user.uid))).then(s=>setFerie(s.docs.map(d=>({id:d.id,...d.data()}))));
+    getDocs(query(collection(db,"documenti_operai"),where("operaioId","==",user.uid))).then(s=>setBuste(s.docs.map(d=>({id:d.id,...d.data()}))));
   }, [user.uid]);
 
   const reload = () => {
     getDocs(query(collection(db,"timesheets"),where("workerId","==",user.uid),orderBy("date","desc"))).then(s=>setRapportini(s.docs.map(d=>({id:d.id,...d.data()}))));
+    getDocs(query(collection(db,"richieste_assenza"),where("operaioId","==",user.uid))).then(s=>setFerie(s.docs.map(d=>({id:d.id,...d.data()}))));
   };
 
   const inviaFerie = async () => {
     if (!ferF.dal) return;
-    const r = await addDoc(collection(db,"ferie"), { ...ferF, userId:user.uid, nomeUtente:user.nome, stato:"in attesa", createdAt:serverTimestamp() });
-    setFerie([...ferie,{id:r.id,...ferF,stato:"in attesa"}]);
+    const r = await addDoc(collection(db,"richieste_assenza"), {
+      operaioId:user.uid, operaioNome:user.nome||user.displayName||"",
+      tipo:ferF.tipo, dal:ferF.dal, al:ferF.al||ferF.dal, note:ferF.note,
+      stato:"in_attesa", createdAt:serverTimestamp()
+    });
+    setFerie([...ferie,{id:r.id,tipo:ferF.tipo,dal:ferF.dal,al:ferF.al||ferF.dal,note:ferF.note,stato:"in_attesa"}]);
     setShowFerie(false);
     setFerF({ tipo:"Ferie", dal:"", al:"", note:"" });
   };
 
-  const fCol = { approvata:C.green, "in attesa":C.gold, rifiutata:C.red };
+  const fCol = { approvata:C.green, "in_attesa":C.gold, "in attesa":C.gold, rifiutata:C.red };
   const stCol = { approved:C.green, submitted:C.gold, pending:C.gold, rejected:C.red };
   const stLabel = { approved:"Approvato", submitted:"In attesa", pending:"In attesa", rejected:"Rifiutato" };
 
   const tabs = [
     {id:"rapportini",l:"📋 Rapportini"},
     {id:"ferie",l:"✈ Ferie"},
-    {id:"buste",l:"📄 Buste"},
+    {id:"documenti",l:"📄 Documenti"},
     {id:"programma",l:"📅 Programma"},
   ];
 
@@ -1603,17 +1658,20 @@ function AreaPersonale({ user }) {
               )}
             </>
           )}
-          {tab==="buste" && (
+          {tab==="documenti" && (
             <>
-              {buste.length===0 && <Empty icon="📄" msg="Nessuna busta paga disponibile. L'amministrazione le caricherà qui." />}
+              {buste.length===0 && <Empty icon="📄" msg="Nessun documento disponibile. L'amministrazione li caricherà qui." />}
               {buste.map(b => (
                 <Card key={b.id}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                     <div>
-                      <div style={{ fontWeight:700, fontSize:15 }}>📄 {b.mese}</div>
-                      <div style={{ fontSize:12, color:C.textDim, marginTop:3 }}>Netto: <span style={{ color:C.green, fontWeight:700 }}>€ {Number(b.netto||0).toLocaleString()}</span></div>
+                      <div style={{ fontWeight:700, fontSize:14 }}>{b.tipo==="busta_paga"?"📄":"📋"} {b.nome||b.mese||b.tipo||"Documento"}</div>
+                      <div style={{ fontSize:11, color:C.textDim, marginTop:3 }}>
+                        {b.tipo && <span style={{ background:`${C.accent}20`, color:C.accent, padding:"1px 6px", borderRadius:4, fontSize:10, fontWeight:600, marginRight:6 }}>{b.tipo==="busta_paga"?"Busta paga":b.tipo==="contratto"?"Contratto":b.tipo==="attestato"?"Attestato":b.tipo}</span>}
+                        {b.data && new Date(b.data).toLocaleDateString("it-IT")}
+                      </div>
                     </div>
-                    {b.url && <a href={b.url} target="_blank" rel="noreferrer"><Btn label="↓ PDF" small variant="ghost" /></a>}
+                    {b.url && <a href={b.url} target="_blank" rel="noreferrer"><Btn label="↓ Scarica" small variant="ghost" /></a>}
                   </div>
                 </Card>
               ))}
@@ -1641,15 +1699,15 @@ function Gestione({ user }) {
   const fileRef = useRef();
 
   useEffect(() => {
-    getDocs(query(collection(db,"ferie"),where("stato","==","in attesa"))).then(s=>setFerie(s.docs.map(d=>({id:d.id,...d.data()}))));
-    getDocs(collection(db,"ferie")).then(s=>setTutteFerie(s.docs.map(d=>({id:d.id,...d.data()}))));
+    getDocs(query(collection(db,"richieste_assenza"),where("stato","==","in_attesa"))).then(s=>setFerie(s.docs.map(d=>({id:d.id,...d.data()}))));
+    getDocs(collection(db,"richieste_assenza")).then(s=>setTutteFerie(s.docs.map(d=>({id:d.id,...d.data()}))));
     getDocs(collection(db,"utenti")).then(s=>setUtenti(s.docs.map(d=>({id:d.id,...d.data()}))));
     getDocs(collection(db,"rapportini")).then(s=>setRapportini(s.docs.map(d=>({id:d.id,...d.data()}))));
     getDocs(collection(db,"programma")).then(s=>setProgrammi(s.docs.map(d=>({id:d.id,...d.data()}))));
   }, []);
 
   const approvaFeria = async (id, stato) => {
-    await updateDoc(doc(db,"ferie",id),{stato});
+    await updateDoc(doc(db,"richieste_assenza",id),{stato});
     setFerie(ferie.filter(f=>f.id!==id));
     setTutteFerie(tutteFerie.map(f=>f.id===id?{...f,stato}:f));
   };
@@ -1680,7 +1738,7 @@ function Gestione({ user }) {
   const rapFiltrati = filterUtente==="tutti" ? rapportini : rapportini.filter(r=>r.userId===filterUtente);
   const progFiltrati = filterUtente==="tutti" ? programmi : programmi.filter(p=>p.userId===filterUtente);
   const giorni = ["lunedi","martedi","mercoledi","giovedi","venerdi","sabato"];
-  const fCol = { approvata:C.green, "in attesa":C.gold, rifiutata:C.red };
+  const fCol = { approvata:C.green, "in_attesa":C.gold, "in attesa":C.gold, rifiutata:C.red };
 
   const tabs = [
     {id:"ferie",    l:"✈ Ferie",      badge:ferie.length},
@@ -3603,6 +3661,20 @@ export default function App() {
           const u = { ...raw, ruolo: getRuolo(raw) };
           setUser(u);
           setSection(u.ruolo==="operaio"?"personale":"dashboard");
+          // Init notifiche push
+          try {
+            if ("Notification" in window && Notification.permission !== "denied") {
+              import("firebase/messaging").then(async ({ getMessaging, getToken }) => {
+                try {
+                  const perm = await Notification.requestPermission();
+                  if (perm !== "granted") return;
+                  const messaging = getMessaging();
+                  const token = await getToken(messaging, { vapidKey: process.env.REACT_APP_FCM_VAPID_KEY });
+                  if (token) await updateDoc(doc(db,"utenti",fu.uid), { fcmToken: token });
+                } catch(e) { console.log("FCM non disponibile:", e.message); }
+              }).catch(() => {});
+            }
+          } catch(e) { console.log("Notifiche non disponibili"); }
         }
       } else setUser(null);
       setLoading(false);
@@ -3615,7 +3687,7 @@ export default function App() {
     Promise.all([
       getDocs(query(collection(db,"projects"),where("status","in",["active","draft"]))),
       getDocs(collection(db,"utenti")),
-      getDocs(query(collection(db,"ferie"),where("stato","==","in attesa"))),
+      getDocs(query(collection(db,"richieste_assenza"),where("stato","==","in_attesa"))),
       getDocs(query(collection(db,"timesheets"),where("status","==","submitted"))),
     ]).then(([c,o,f,r]) => setStats({
       cantieri: c.size,
@@ -3634,21 +3706,34 @@ export default function App() {
 
   if (!user) return <LoginScreen onLogin={u=>{ setUser(u); setSection(u.ruolo==="operaio"?"personale":"dashboard"); }} />;
 
-  const navAll = [
-    { id:"dashboard",  icon:"🏠", label:"Home",     roles:["admin","amministrazione","ufficio_tecnico"] },
-    { id:"cantieri",   icon:"🏗", label:"Cantieri",  roles:["admin","amministrazione","ufficio_tecnico","operaio"] },
-    { id:"chat",       icon:"💬", label:"Chat",      roles:["admin","amministrazione","ufficio_tecnico","operaio"] },
-    { id:"personale",  icon:"👤", label:"Personale", roles:["admin","amministrazione","ufficio_tecnico","operaio"] },
-    { id:"altro",      icon:"⋯",  label:"Altro",     roles:["admin","amministrazione","ufficio_tecnico","operaio"] },
+  const isOp = user.ruolo === "operaio";
+  const navAll = isOp ? [
+    { id:"cantieri",   icon:"🏗", label:"Cantieri" },
+    { id:"personale",  icon:"👤", label:"Personale" },
+    { id:"chat",       icon:"💬", label:"Chat" },
+    { id:"altro",      icon:"⋯",  label:"Altro" },
+  ] : [
+    { id:"dashboard",  icon:"🏠", label:"Home" },
+    { id:"cantieri",   icon:"🏗", label:"Cantieri" },
+    { id:"chat",       icon:"💬", label:"Chat" },
+    { id:"personale",  icon:"👤", label:"Personale" },
+    { id:"altro",      icon:"⋯",  label:"Altro" },
   ];
-  const navItems = navAll.filter(n => n.roles.includes(user.ruolo));
+  const navItems = navAll;
 
   const altroItems = [
-    { id:"cronoprogramma", icon:"📅", label:"Cronoprogramma" },
-    { id:"procedure",      icon:"📋", label:"Procedure" },
-    { id:"regolamento",    icon:"📜", label:"Regolamento" },
-    { id:"appunti_hub",    icon:"📷", label:"Appunti cantiere" },
-    { id:"misuratore_hub", icon:"📐", label:"Misuratore" },
+    ...(isOp ? [
+      { id:"procedure",      icon:"📋", label:"Manuale lavorazioni" },
+      { id:"misuratore_hub", icon:"📐", label:"Misuratore" },
+      { id:"appunti_hub",    icon:"📷", label:"Appunti cantiere" },
+      { id:"regolamento",    icon:"📜", label:"Regolamento" },
+    ] : [
+      { id:"cronoprogramma", icon:"📅", label:"Cronoprogramma" },
+      { id:"procedure",      icon:"📋", label:"Manuale lavorazioni" },
+      { id:"appunti_hub",    icon:"📷", label:"Appunti cantiere" },
+      { id:"misuratore_hub", icon:"📐", label:"Misuratore" },
+      { id:"regolamento",    icon:"📜", label:"Regolamento" },
+    ]),
     ...(isManager(user.ruolo)?[{ id:"gestione", icon:"⚙", label:"Gestione" }]:[]),
   ];
 
