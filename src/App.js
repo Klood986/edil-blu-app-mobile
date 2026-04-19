@@ -40,10 +40,10 @@ const canEdit  = (r) => ["admin","amministrazione","ufficio_tecnico"].includes(r
 const isManager = (r) => ["admin","amministrazione"].includes(r);
 
 // ─── COMPONENTI BASE ──────────────────────────────────────────────────────────
-const globalCss = `
+const buildGlobalCss = (C) => `
   @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@600;700;800&display=swap');
   *{box-sizing:border-box;margin:0;padding:0}
-  body{background:${C.bg};font-family:'Barlow',sans-serif}
+  body{background:${C.bg};font-family:'Barlow',sans-serif;color:${C.text}}
   ::-webkit-scrollbar{width:4px;height:4px}
   ::-webkit-scrollbar-track{background:${C.surface}}
   ::-webkit-scrollbar-thumb{background:${C.mid};border-radius:2px}
@@ -186,6 +186,7 @@ function SplashScreen() {
 
 // ─── LOGIN ────────────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin }) {
+  const { C } = useTheme();
   const [email, setEmail] = useState(() => localStorage.getItem("eb_email") || "");
   const [pw, setPw] = useState(() => localStorage.getItem("eb_pw") || "");
   const [ricordami, setRicordami] = useState(() => !!localStorage.getItem("eb_email"));
@@ -3769,6 +3770,7 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
 }
 
 export default function App() {
+  const { C } = useTheme();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [section, setSection] = useState("dashboard");
@@ -3821,6 +3823,8 @@ export default function App() {
       rap: r.size
     }));
   }, [user]);
+
+  const globalCss = buildGlobalCss(C);
 
   if (loading) return (
     <>
