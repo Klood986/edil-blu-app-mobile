@@ -195,8 +195,7 @@ function LoginScreen({ onLogin }) {
     <div style={{ minHeight:"100vh", background:`radial-gradient(ellipse at 30% 20%,${C.mid}40 0%,${C.bg} 60%)`, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:24 }}>
       {/* Logo */}
       <div style={{ textAlign:"center", marginBottom:40 }}>
-        <div style={{ width:84, height:84, borderRadius:24, background:`linear-gradient(135deg,${C.blue},${C.accent})`, margin:"0 auto 18px", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:`0 10px 40px ${C.blue}70`, fontSize:44 }}>🏗</div>
-        <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:38, color:C.text, letterSpacing:2 }}>EDIL BLU</div>
+        <img src="/logo-splash.png" alt="Edil Blu" style={{ width: 140, height: "auto", margin: "0 auto 8px", display: "block", filter: `drop-shadow(0 10px 30px ${C.blue}50)` }} />
         <div style={{ fontSize:10, color:C.accent, letterSpacing:4, textTransform:"uppercase", marginTop:5 }}>Gestionale Aziendale</div>
       </div>
 
@@ -207,7 +206,7 @@ function LoginScreen({ onLogin }) {
           <div style={{ position:"relative" }}>
             <input type="email" placeholder="nome@edilblu.it" value={email} onChange={e=>setEmail(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&login()}
-              style={{ width:"100%", background:`${C.mid}30`, border:`1px solid ${C.border}`, borderRadius:10, color:C.text, padding:"12px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif" }} />
+              style={{ width:"100%", boxSizing:"border-box", background:`${C.mid}30`, border:`1px solid ${C.border}`, borderRadius:10, color:C.text, padding:"12px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif" }} />
           </div>
         </div>
         <div style={{ marginBottom:20 }}>
@@ -215,7 +214,7 @@ function LoginScreen({ onLogin }) {
           <div style={{ position:"relative" }}>
             <input type={showPw?"text":"password"} placeholder="••••••••" value={pw} onChange={e=>setPw(e.target.value)}
               onKeyDown={e=>e.key==="Enter"&&login()}
-              style={{ width:"100%", background:`${C.mid}30`, border:`1px solid ${C.border}`, borderRadius:10, color:C.text, padding:"12px 44px 12px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif" }} />
+              style={{ width:"100%", boxSizing:"border-box", background:`${C.mid}30`, border:`1px solid ${C.border}`, borderRadius:10, color:C.text, padding:"12px 44px 12px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif" }} />
             <button onClick={()=>setShowPw(!showPw)} style={{ position:"absolute", right:12, top:"50%", transform:"translateY(-50%)", background:"none", border:"none", color:C.textMuted, cursor:"pointer", fontSize:16 }}>
               {showPw?"🙈":"👁"}
             </button>
