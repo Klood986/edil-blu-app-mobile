@@ -8,6 +8,10 @@ import {
   query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { useTheme } from "./ThemeContext";
+import { Home, HardHat, MessageCircle, User, Menu as MenuIcon,
+         Calendar, ClipboardList, Camera, Ruler, FileText, Settings,
+         ChevronLeft, X, Plus, ChevronDown, Inbox } from "lucide-react";
 
 // ─── DESIGN SYSTEM ────────────────────────────────────────────────────────────
 // Palette importata da theme.js — default dark per retrocompatibilità
@@ -51,64 +55,83 @@ const globalCss = `
   .fu{animation:fadeUp .25s ease}
   .splash-logo{animation:splashIn .6s cubic-bezier(.34,1.56,.64,1) forwards}
   .splash-out{animation:splashFade .4s ease forwards}
+  @keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+  @keyframes modalFadeIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
 `;
 
 function Avatar({ name, role, size = 36 }) {
+  const { C } = useTheme();
   const r = ROLES[role] || ROLES.operaio;
   const initials = (name || "?").split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase();
   return (
-    <div style={{ width:size, height:size, borderRadius:"50%", background:`${r.color}20`, border:`2px solid ${r.color}60`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:size*0.33, fontWeight:700, color:r.color, flexShrink:0, fontFamily:"Barlow Condensed,sans-serif" }}>
+    <div style={{ width:size, height:size, borderRadius:"50%", background:`linear-gradient(135deg, ${r.color}25, ${r.color}10)`, border:`1.5px solid ${r.color}60`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:size*0.33, fontWeight:700, color:r.color, flexShrink:0, fontFamily:"Barlow Condensed,sans-serif", boxShadow:`0 2px 8px ${r.color}20` }}>
       {initials}
     </div>
   );
 }
 
 function RoleBadge({ role }) {
+  const { C } = useTheme();
   const r = ROLES[role] || ROLES.operaio;
-  return <span style={{ background:`${r.color}18`, color:r.color, border:`1px solid ${r.color}40`, borderRadius:4, padding:"2px 8px", fontSize:10, fontWeight:700 }}>{r.label}</span>;
+  return <span style={{ background:`${r.color}18`, color:r.color, border:"none", borderRadius:999, padding:"4px 10px", fontSize:10, fontWeight:600, letterSpacing:0.3 }}>{r.label}</span>;
 }
 
 function Card({ children, style={}, onClick }) {
-  return <div onClick={onClick} style={{ background:C.card, borderRadius:12, border:`1px solid ${C.border}`, padding:16, marginBottom:10, cursor:onClick?"pointer":"default", ...style }}>{children}</div>;
+  const { C } = useTheme();
+  const [hov, setHov] = useState(false);
+  return <div onClick={onClick}
+    onMouseEnter={onClick ? ()=>setHov(true) : undefined}
+    onMouseLeave={onClick ? ()=>setHov(false) : undefined}
+    style={{ background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:18, marginBottom:10, cursor:onClick?"pointer":"default", transition:"transform 0.15s, box-shadow 0.15s", transform:hov?"scale(1.01)":"none", boxShadow:hov?`0 4px 20px ${C.border}60`:"none", ...style }}>{children}</div>;
 }
 
 function Inp({ placeholder, value, onChange, type="text", style={} }) {
+  const { C, theme } = useTheme();
+  const [focused, setFocused] = useState(false);
   return <input type={type} placeholder={placeholder} value={value} onChange={onChange}
-    style={{ width:"100%", background:`${C.mid}40`, border:`1px solid ${C.border}`, borderRadius:8, color:C.text, padding:"10px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif", marginBottom:10, ...style }} />;
+    onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
+    style={{ width:"100%", boxSizing:"border-box", background:theme==="dark"?`${C.mid}40`:C.surface, border:`1.5px solid ${focused?C.accent:C.border}`, borderRadius:10, color:C.text, padding:"12px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif", marginBottom:10, transition:"border-color 0.15s", ...style }} />;
 }
 
 function Txta({ placeholder, value, onChange, rows=3 }) {
+  const { C, theme } = useTheme();
+  const [focused, setFocused] = useState(false);
   return <textarea placeholder={placeholder} value={value} onChange={onChange} rows={rows}
-    style={{ width:"100%", background:`${C.mid}40`, border:`1px solid ${C.border}`, borderRadius:8, color:C.text, padding:"10px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif", marginBottom:10, resize:"vertical" }} />;
+    onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
+    style={{ width:"100%", boxSizing:"border-box", background:theme==="dark"?`${C.mid}40`:C.surface, border:`1.5px solid ${focused?C.accent:C.border}`, borderRadius:10, color:C.text, padding:"12px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif", marginBottom:10, resize:"vertical", minHeight:80, transition:"border-color 0.15s" }} />;
 }
 
 function Sel({ value, onChange, children }) {
+  const { C } = useTheme();
   return <select value={value} onChange={onChange}
-    style={{ width:"100%", background:C.card, border:`1px solid ${C.border}`, borderRadius:8, color:C.text, padding:"10px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif", marginBottom:10, appearance:"none" }}>
+    style={{ width:"100%", boxSizing:"border-box", background:C.card, border:`1.5px solid ${C.border}`, borderRadius:10, color:C.text, padding:"12px 14px", paddingRight:32, fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif", marginBottom:10, appearance:"none", backgroundImage:`url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238baac8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat:"no-repeat", backgroundPosition:"right 10px center" }}>
     {children}
   </select>;
 }
 
 function Btn({ label, onClick, variant="primary", small, icon, disabled }) {
+  const { C } = useTheme();
   const v = {
-    primary:   { background:`linear-gradient(135deg,${C.blue},${C.bright})`, color:"#fff", border:"none" },
-    secondary: { background:"transparent", color:C.text, border:`1px solid ${C.border}` },
-    danger:    { background:C.redDim, color:C.red, border:`1px solid ${C.red}40` },
-    ghost:     { background:C.accentDim, color:C.accent, border:`1px solid ${C.accent}40` },
+    primary:   { background:`linear-gradient(135deg,${C.blue},${C.bright})`, color:"#fff", border:"none", boxShadow:`0 4px 14px ${C.blue}40` },
+    secondary: { background:`${C.mid}40`, color:C.text, border:`1px solid ${C.border}`, boxShadow:"none" },
+    ghost:     { background:"transparent", color:C.text, border:`1px solid ${C.border}`, boxShadow:"none" },
+    danger:    { background:C.red, color:"#fff", border:"none", boxShadow:"none" },
   };
+  const IconComp = icon;
   return <button onClick={onClick} disabled={disabled}
-    style={{ ...v[variant], borderRadius:8, padding:small?"6px 12px":"11px 18px", fontSize:small?12:14, fontWeight:700, cursor:disabled?"default":"pointer", fontFamily:"Barlow,sans-serif", marginBottom:small?0:8, width:small?"auto":"100%", opacity:disabled?.5:1, display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
-    {icon && <span style={{ fontSize:small?12:16 }}>{icon}</span>}{label}
+    style={{ ...v[variant], borderRadius:10, padding:small?"8px 14px":"12px 18px", fontSize:small?13:14, fontWeight:700, cursor:disabled?"default":"pointer", fontFamily:"Barlow,sans-serif", marginBottom:small?0:8, width:small?"auto":"100%", opacity:disabled?.5:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, transition:"all 0.15s" }}>
+    {icon && (typeof icon === "function" ? <IconComp size={small?14:16} /> : <span style={{ fontSize:small?13:16 }}>{icon}</span>)}{label}
   </button>;
 }
 
 function Modal({ title, onClose, children }) {
+  const { C } = useTheme();
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:500, display:"flex", alignItems:"flex-end", justifyContent:"center" }} onClick={onClose}>
-      <div className="fu" style={{ background:C.surface, borderRadius:"16px 16px 0 0", border:`1px solid ${C.border}`, borderBottom:"none", padding:24, width:"100%", maxWidth:480, maxHeight:"88vh", overflowY:"auto" }} onClick={e => e.stopPropagation()}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
-          <div style={{ fontWeight:800, fontSize:17, fontFamily:"Barlow Condensed" }}>{title}</div>
-          <button onClick={onClose} style={{ background:"none", border:"none", color:C.textMuted, fontSize:22, cursor:"pointer" }}>✕</button>
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)", zIndex:500, display:"flex", alignItems:"flex-end", justifyContent:"center" }} onClick={onClose}>
+      <div style={{ background:C.card, borderRadius:"18px 18px 0 0", border:`1px solid ${C.border}`, borderBottom:"none", padding:24, width:"100%", maxWidth:500, maxHeight:"88vh", overflowY:"auto", animation:"modalFadeIn 0.2s ease" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+          <div style={{ fontWeight:700, fontSize:18, fontFamily:"Barlow Condensed" }}>{title}</div>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:C.textMuted, cursor:"pointer", padding:4, display:"flex" }}><X size={20} /></button>
         </div>
         {children}
       </div>
@@ -117,45 +140,44 @@ function Modal({ title, onClose, children }) {
 }
 
 function ProgressBar({ pct }) {
-  const col = pct>=80?C.green:pct>=50?C.accent:pct>=25?C.gold:C.red;
+  const { C } = useTheme();
   return (
-    <div style={{ height:5, borderRadius:3, background:`${C.border}80`, overflow:"hidden", marginTop:8 }}>
-      <div style={{ height:"100%", width:`${Math.min(pct||0,100)}%`, background:col, borderRadius:3, transition:"width .6s" }} />
+    <div style={{ height:6, borderRadius:3, background:`${C.mid}40`, overflow:"hidden", marginTop:8 }}>
+      <div style={{ height:"100%", width:`${Math.min(pct||0,100)}%`, background:`linear-gradient(90deg, ${C.accent}, ${C.bright})`, borderRadius:3, transition:"width 0.3s ease" }} />
     </div>
   );
 }
 
 function SecTitle({ label }) {
-  return <div style={{ fontSize:10, fontWeight:800, color:C.textMuted, letterSpacing:2, textTransform:"uppercase", marginBottom:12, marginTop:4 }}>{label}</div>;
+  const { C } = useTheme();
+  return <div style={{ fontSize:11, fontWeight:700, color:C.textMuted, letterSpacing:1.2, textTransform:"uppercase", marginBottom:10, marginTop:4 }}>{label}</div>;
 }
 
 function Empty({ icon, msg }) {
-  return <div style={{ textAlign:"center", padding:"48px 0", color:C.textMuted }}><div style={{ fontSize:40, marginBottom:12 }}>{icon}</div><div style={{ fontSize:14 }}>{msg}</div></div>;
+  const { C } = useTheme();
+  const IconComp = icon || Inbox;
+  return (
+    <div style={{ textAlign:"center", padding:"40px 20px", color:C.textMuted }}>
+      {typeof IconComp === "function" ? <IconComp size={40} color={C.textMuted} /> : <div style={{ fontSize:40, marginBottom:12 }}>{IconComp}</div>}
+      <div style={{ fontSize:14, marginTop:12 }}>{msg}</div>
+    </div>
+  );
 }
 
 // ─── SPLASH SCREEN ────────────────────────────────────────────────────────────
-const splashKeyframes = `
-  @keyframes splashFadeScale { from { opacity:0; transform:scale(0.8); } to { opacity:1; transform:scale(1); } }
-  @keyframes splashSlideUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }
-  @keyframes splashLoadBar { from { width:0%; } to { width:100%; } }
-`;
-
 function SplashScreen() {
+  const { theme, C } = useTheme();
   return (
-    <div style={{ position:"fixed", inset:0, background:"linear-gradient(135deg, #070f1e 0%, #0d1f3c 50%, #1a3a6b 100%)", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", zIndex:9999 }}>
-      <style>{splashKeyframes}</style>
-      <div style={{ animation:"splashFadeScale 0.8s ease-out forwards", textAlign:"center", marginBottom:24 }}>
-        <div style={{ width:100, height:100, borderRadius:28, background:"linear-gradient(135deg, #1a3a6b, #4a9eff)", margin:"0 auto 16px", display:"flex", alignItems:"center", justifyContent:"center", boxShadow:"0 16px 64px rgba(74,158,255,0.4)", fontSize:52 }}>🏗</div>
-        <div style={{ fontSize:38, fontWeight:900, letterSpacing:8, color:"#ffffff", fontFamily:"Barlow Condensed, sans-serif" }}>EDIL BLU</div>
-      </div>
-      <div style={{ animation:"splashSlideUp 0.6s ease-out 0.5s both", fontSize:13, color:"#4a9eff", letterSpacing:4, textTransform:"uppercase", marginBottom:48 }}>
-        Gestione Cantieri
-      </div>
-      <div style={{ width:200, height:3, background:"rgba(255,255,255,0.1)", borderRadius:2, overflow:"hidden" }}>
-        <div style={{ height:"100%", background:"linear-gradient(90deg, #4a9eff, #38bdf8)", animation:"splashLoadBar 2s ease-in-out forwards", borderRadius:2 }} />
-      </div>
-      <div style={{ position:"absolute", bottom:40, fontSize:11, color:"rgba(255,255,255,0.25)", animation:"splashSlideUp 0.6s ease-out 1s both" }}>
-        v2.0 — Edil Blu ERP
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 9999,
+      background: theme === "light" ? "#ffffff" : `radial-gradient(ellipse at center, ${C.mid}40 0%, ${C.bg} 70%)`,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      animation: "splashFade 0.4s ease 1.8s forwards"
+    }}>
+      <div className="splash-logo" style={{ textAlign: "center" }}>
+        <img src="/logo-splash.png" alt="Edil Blu"
+          style={{ width: 200, height: "auto", margin: "0 auto", display: "block",
+                   filter: "drop-shadow(0 10px 40px rgba(46,107,184,0.3))" }} />
       </div>
     </div>
   );
@@ -3752,33 +3774,33 @@ export default function App() {
 
   const isOp = user.ruolo === "operaio";
   const navAll = isOp ? [
-    { id:"cantieri",   icon:"🏗", label:"Cantieri" },
-    { id:"personale",  icon:"👤", label:"Personale" },
-    { id:"chat",       icon:"💬", label:"Chat" },
-    { id:"altro",      icon:"⋯",  label:"Altro" },
+    { id:"cantieri",   icon:HardHat,        label:"Cantieri" },
+    { id:"personale",  icon:User,            label:"Personale" },
+    { id:"chat",       icon:MessageCircle,   label:"Chat" },
+    { id:"altro",      icon:MenuIcon,        label:"Altro" },
   ] : [
-    { id:"dashboard",  icon:"🏠", label:"Home" },
-    { id:"cantieri",   icon:"🏗", label:"Cantieri" },
-    { id:"chat",       icon:"💬", label:"Chat" },
-    { id:"personale",  icon:"👤", label:"Personale" },
-    { id:"altro",      icon:"⋯",  label:"Altro" },
+    { id:"dashboard",  icon:Home,            label:"Home" },
+    { id:"cantieri",   icon:HardHat,         label:"Cantieri" },
+    { id:"chat",       icon:MessageCircle,   label:"Chat" },
+    { id:"personale",  icon:User,            label:"Personale" },
+    { id:"altro",      icon:MenuIcon,        label:"Altro" },
   ];
   const navItems = navAll;
 
   const altroItems = [
     ...(isOp ? [
-      { id:"procedure",      icon:"📋", label:"Manuale lavorazioni" },
-      { id:"misuratore_hub", icon:"📐", label:"Misuratore" },
-      { id:"appunti_hub",    icon:"📷", label:"Appunti cantiere" },
-      { id:"regolamento",    icon:"📜", label:"Regolamento" },
+      { id:"procedure",      icon:ClipboardList, label:"Manuale lavorazioni" },
+      { id:"misuratore_hub", icon:Ruler,          label:"Misuratore" },
+      { id:"appunti_hub",    icon:Camera,         label:"Appunti cantiere" },
+      { id:"regolamento",    icon:FileText,        label:"Regolamento" },
     ] : [
-      { id:"cronoprogramma", icon:"📅", label:"Cronoprogramma" },
-      { id:"procedure",      icon:"📋", label:"Manuale lavorazioni" },
-      { id:"appunti_hub",    icon:"📷", label:"Appunti cantiere" },
-      { id:"misuratore_hub", icon:"📐", label:"Misuratore" },
-      { id:"regolamento",    icon:"📜", label:"Regolamento" },
+      { id:"cronoprogramma", icon:Calendar,       label:"Cronoprogramma" },
+      { id:"procedure",      icon:ClipboardList,  label:"Manuale lavorazioni" },
+      { id:"appunti_hub",    icon:Camera,          label:"Appunti cantiere" },
+      { id:"misuratore_hub", icon:Ruler,           label:"Misuratore" },
+      { id:"regolamento",    icon:FileText,         label:"Regolamento" },
     ]),
-    ...(isManager(user.ruolo)?[{ id:"gestione", icon:"⚙", label:"Gestione" }]:[]),
+    ...(isManager(user.ruolo)?[{ id:"gestione", icon:Settings, label:"Gestione" }]:[]),
   ];
 
   const titles = { dashboard:"Dashboard", cantieri:"Cantieri", chat:"Chat", personale:"Area Personale", cronoprogramma:"Cronoprogramma", procedure:"Procedure", regolamento:"Regolamento", gestione:"Gestione", appunti_hub:"Appunti cantiere", misuratore_hub:"Misuratore" };
@@ -3817,29 +3839,37 @@ export default function App() {
       {section==="misuratore_hub" && !misuratoreProgetto && <MisuratoreHub user={user} onSelect={p => setMisuratoreProgetto(p)} />}
       {section==="misuratore_hub" && misuratoreProgetto && <MisuratoreDisegno user={user} projectId={misuratoreProgetto.id} projectName={misuratoreProgetto.clientName||misuratoreProgetto.name} onBack={() => setMisuratoreProgetto(null)} />}
 
-      {/* Menu Altro */}
+      {/* Menu Altro — Bottom Sheet */}
       {altroOpen && (
-        <div style={{ position:"fixed", inset:0, zIndex:300 }} onClick={()=>setAltroOpen(false)}>
-          <div style={{ position:"absolute", bottom:70, left:"50%", transform:"translateX(-50%)", width:"88%", maxWidth:420, background:C.surface, border:`1px solid ${C.border}`, borderRadius:14, padding:8 }} onClick={e=>e.stopPropagation()}>
-            {altroItems.map(item => (
-              <button key={item.id} onClick={()=>{ setSection(item.id); setAltroOpen(false); }}
-                style={{ width:"100%", display:"flex", alignItems:"center", gap:14, padding:"12px 16px", background:"none", border:"none", color:C.text, fontSize:14, cursor:"pointer", fontFamily:"Barlow", borderRadius:10, textAlign:"left" }}>
-                <span style={{ fontSize:22 }}>{item.icon}</span>
-                <span style={{ fontWeight:600 }}>{item.label}</span>
-              </button>
-            ))}
+        <div style={{ position:"fixed", inset:0, zIndex:300, background:"rgba(0,0,0,0.5)", backdropFilter:"blur(3px)" }} onClick={()=>setAltroOpen(false)}>
+          <div style={{ position:"absolute", bottom:0, left:0, right:0, background:C.surface, borderTopLeftRadius:20, borderTopRightRadius:20, padding:"12px 16px 24px", maxWidth:480, margin:"0 auto", animation:"slideUp 0.25s ease" }} onClick={e=>e.stopPropagation()}>
+            <div style={{ width:40, height:4, background:C.border, borderRadius:2, margin:"0 auto 16px" }} />
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+              {altroItems.map(item => {
+                const IconComp = item.icon;
+                return (
+                  <button key={item.id} onClick={()=>{ setSection(item.id); setAltroOpen(false); }}
+                    style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:8, padding:"18px 12px", background:`${C.mid}30`, border:`1px solid ${C.border}`, color:C.text, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"Barlow", borderRadius:14, transition:"all 0.15s" }}>
+                    <IconComp size={26} strokeWidth={1.7} color={C.accent} />
+                    {item.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}
 
       {/* Bottom Nav */}
-      <nav style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:C.surface, borderTop:`1px solid ${C.border}`, display:"flex", zIndex:200, paddingBottom:"env(safe-area-inset-bottom)" }}>
+      <nav style={{ position:"fixed", bottom:0, left:"50%", transform:"translateX(-50%)", width:"100%", maxWidth:480, background:C.surface, borderTop:`1px solid ${C.border}`, display:"flex", zIndex:200, paddingBottom:"env(safe-area-inset-bottom)", boxShadow:"0 -2px 20px rgba(0,0,0,0.1)" }}>
         {navItems.map(n => {
           const active = n.id==="altro" ? altroItems.map(i=>i.id).includes(section) : section===n.id;
+          const IconComp = n.icon;
           return (
             <button key={n.id} onClick={()=>n.id==="altro"?setAltroOpen(!altroOpen):(setSection(n.id),setAppuntiCantiere(null),setMisuratoreProgetto(null))}
-              style={{ flex:1, padding:"10px 0 8px", background:"none", border:"none", color:active?C.accent:C.textMuted, fontSize:9, fontWeight:active?800:500, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:3, borderTop:`2px solid ${active?C.accent:"transparent"}`, fontFamily:"Barlow", letterSpacing:0.3, textTransform:"uppercase" }}>
-              <span style={{ fontSize:20 }}>{n.icon}</span>
+              style={{ flex:1, padding:"10px 0 8px", background:"none", border:"none", color:active?C.accent:C.textMuted, fontSize:10, fontWeight:active?700:500, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:4, fontFamily:"Barlow", transition:"color 0.15s", position:"relative" }}>
+              {active && <div style={{ position:"absolute", top:0, left:"50%", transform:"translateX(-50%)", width:36, height:3, background:C.accent, borderRadius:"0 0 3px 3px" }} />}
+              <IconComp size={22} strokeWidth={active?2.2:1.8} />
               {n.label}
             </button>
           );
