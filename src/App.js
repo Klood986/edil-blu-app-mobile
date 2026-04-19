@@ -2338,6 +2338,13 @@ function CambioPasswordObbligatorio({ user, onDone }) {
           </div>
         )}
         <Btn label={loading ? "Salvataggio..." : "Imposta password"} onClick={submit} disabled={loading || !req1 || !req2} />
+        <p style={{ fontSize: 12, color: C.textMuted, marginTop: 12, marginBottom: 0, textAlign: "center", lineHeight: 1.5 }}>
+          Se vedi "sessione scaduta", fai logout sotto e rientra.
+        </p>
+        <button onClick={() => signOut(auth)}
+          style={{ width: "100%", padding: "12px", marginTop: 10, background: "transparent", color: C.textMuted, border: `1px solid ${C.border}`, borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+          <LogOut size={16} /> Esci e rientra con le credenziali
+        </button>
       </Card>
 
       {/* Overlay successo */}
