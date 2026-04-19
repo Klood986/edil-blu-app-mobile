@@ -11,7 +11,8 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { useTheme } from "./ThemeContext";
 import { Home, HardHat, MessageCircle, User, Menu as MenuIcon,
          Calendar, ClipboardList, Camera, Ruler, FileText, Settings,
-         ChevronLeft, X, Plus, ChevronDown, Inbox } from "lucide-react";
+         ChevronLeft, X, Plus, ChevronDown, Inbox,
+         Plane, Activity, Sun, Moon, LogOut } from "lucide-react";
 
 // ─── DESIGN SYSTEM ────────────────────────────────────────────────────────────
 // Palette importata da theme.js — default dark per retrocompatibilità
@@ -265,6 +266,7 @@ function LoginScreen({ onLogin }) {
 
 // ─── DASHBOARD ────────────────────────────────────────────────────────────────
 function Dashboard({ user, stats, onSection }) {
+  const { C } = useTheme();
   const [ferieAlert, setFerieAlert] = useState([]);
   const [rapAlert, setRapAlert] = useState([]);
   const [showRapForm, setShowRapForm] = useState(false);
@@ -298,137 +300,146 @@ function Dashboard({ user, stats, onSection }) {
       .then(s => setUltimiRap(s.docs.slice(0,5).map(d=>({id:d.id,...d.data()})))).catch(()=>{});
   }, [user.ruolo, user.uid]);
 
-  // Path SVG per icone
-  const P = {
-    rapportino: <><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></>,
-    cantiere:   <><rect x="3" y="9" width="18" height="12" rx="1"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/><line x1="12" y1="13" x2="12" y2="17"/></>,
-    calendario: <><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></>,
-    ferie:      <><path d="M17.8 19.2L16 11l3.5-3.5C21 6 21 4 19 4c-2 0-4 2-4 4l-3.5 3.5L4 9.2c-.5-.2-1 .1-1 .7v1.1c0 .4.2.8.5 1l5.5 3.2L7 18l-2 1 1 2 2-1 1-2 3.2 5.5c.2.3.6.5 1 .5h1.1c.6 0 .9-.5.7-1z"/></>,
-    gestione:   <><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></>,
-    crono:      <><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></>,
-    utenti:     <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></>,
-  };
-
   // Azioni rapide per operaio
   const azioniOperaio = [
-    { path:P.rapportino, label:"Rapportino", color:C.accent,  action:()=>setShowRapForm(true) },
-    { path:P.cantiere,   label:"Cantieri",   color:"#38bdf8", action:()=>onSection("cantieri") },
-    { path:P.calendario, label:"Programma",  color:C.green,   action:()=>onSection("personale") },
-    { path:P.ferie,      label:"Ferie",      color:"#a78bfa", action:()=>onSection("personale") },
+    { icon: ClipboardList, label:"Rapportino", color:C.accent,  action:()=>setShowRapForm(true) },
+    { icon: HardHat,       label:"Cantieri",   color:C.bright,  action:()=>onSection("cantieri") },
+    { icon: Calendar,      label:"Programma",  color:C.green,   action:()=>onSection("personale") },
+    { icon: Plane,         label:"Ferie",      color:"#a78bfa", action:()=>onSection("personale") },
   ];
 
   // Azioni rapide per manager
   const azioniManager = [
-    { path:P.cantiere,   label:"Cantieri",   color:"#38bdf8", action:()=>onSection("cantieri") },
-    { path:P.rapportino, label:"Rapportini", color:C.accent,  action:()=>onSection("gestione") },
-    { path:P.crono,      label:"Crono",      color:C.green,   action:()=>onSection("cronoprogramma") },
-    { path:P.gestione,   label:"Gestione",   color:C.gold,    action:()=>onSection("gestione") },
+    { icon: HardHat,       label:"Cantieri",   color:C.bright,  action:()=>onSection("cantieri") },
+    { icon: ClipboardList, label:"Rapportini", color:C.accent,  action:()=>onSection("gestione") },
+    { icon: Activity,      label:"Crono",      color:C.green,   action:()=>onSection("cronoprogramma") },
+    { icon: Settings,      label:"Gestione",   color:C.gold,    action:()=>onSection("gestione") },
   ];
 
   const azioni = user.ruolo==="operaio" ? azioniOperaio : azioniManager;
 
   return (
-    <div style={{ paddingBottom:80, flex:1, overflowY:"auto" }} className="fu">
-      {/* Header hero */}
-      <div style={{ background:`linear-gradient(160deg,${C.mid} 0%,${C.blue}80 60%,${C.bright}30 100%)`, padding:"28px 20px 24px", position:"relative", overflow:"hidden" }}>
-        <div style={{ position:"absolute", top:-20, right:-20, width:140, height:140, borderRadius:"50%", background:`${C.accent}15`, pointerEvents:"none" }} />
-        <div style={{ position:"absolute", bottom:-30, right:30, width:80, height:80, borderRadius:"50%", background:`${C.bright}20`, pointerEvents:"none" }} />
-        <div style={{ fontSize:12, color:"#a8d4f0", marginBottom:6, textTransform:"capitalize" }}>{saluto},</div>
-        <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:30, color:C.text, marginBottom:6 }}>{user.nome} {user.cognome||""}</div>
-        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-          <RoleBadge role={user.ruolo} />
-          <span style={{ fontSize:11, color:"#a8d4f0cc" }}>· {oggi}</span>
+    <div style={{ paddingBottom:90, flex:1, overflowY:"auto", background:C.bg, minHeight:"100vh" }} className="fu">
+
+      {/* Header con logo + saluto */}
+      <div style={{ padding:"20px 20px 24px", background:C.surface, borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:14 }}>
+        <img src="/logo192.png" alt="Edil Blu" style={{ width:44, height:44, borderRadius:10 }} />
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:11, color:C.textMuted, fontWeight:600, letterSpacing:0.5 }}>{saluto.toUpperCase()}</div>
+          <div style={{ fontSize:19, fontWeight:700, color:C.text, marginTop:2 }}>{user.nome} {user.cognome||""}</div>
         </div>
+        <Avatar name={`${user.nome} ${user.cognome||""}`} role={user.ruolo} size={40} />
       </div>
 
-      <div style={{ padding:"20px 16px" }}>
-        {/* Alert ferie */}
+      {/* Data + badge ruolo */}
+      <div style={{ padding:"14px 20px 0", display:"flex", alignItems:"center", gap:10 }}>
+        <RoleBadge role={user.ruolo} />
+        <span style={{ fontSize:12, color:C.textMuted, textTransform:"capitalize" }}>{oggi}</span>
+      </div>
+
+      {/* CONTENT */}
+      <div style={{ padding:"16px 20px" }}>
+
+        {/* Alert ferie (solo manager) */}
         {isManager(user.ruolo) && ferieAlert.length > 0 && (
-          <div onClick={()=>onSection("gestione")} style={{ background:`linear-gradient(135deg,${C.goldDim},rgba(240,165,0,.08))`, border:`1px solid ${C.gold}40`, borderRadius:14, padding:"14px 16px", marginBottom:12, cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
-            <div style={{ width:40, height:40, borderRadius:12, background:C.goldDim, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>✈</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:700, fontSize:13, color:C.gold }}>Ferie in attesa di approvazione</div>
-              <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>{ferieAlert.map(f=>f.nomeUtente).join(", ")}</div>
+          <Card onClick={()=>onSection("gestione")} style={{ marginBottom:12, borderLeft:`3px solid ${C.gold}`, padding:14, cursor:"pointer" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <div style={{ width:38, height:38, borderRadius:10, background:C.goldDim, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <Plane size={18} color={C.gold} />
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:700, fontSize:13, color:C.text }}>Ferie da approvare</div>
+                <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>{ferieAlert.map(f=>f.nomeUtente).join(", ")}</div>
+              </div>
+              <div style={{ background:C.gold, color:"#000", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:800 }}>{ferieAlert.length}</div>
             </div>
-            <div style={{ background:C.gold, color:"#000", borderRadius:20, padding:"2px 10px", fontSize:12, fontWeight:800 }}>{ferieAlert.length}</div>
-          </div>
+          </Card>
         )}
 
         {/* Alert rapportini */}
         {canEdit(user.ruolo) && rapAlert.length > 0 && (
-          <div onClick={()=>onSection("gestione")} style={{ background:C.accentDim, border:`1px solid ${C.accent}40`, borderRadius:14, padding:"14px 16px", marginBottom:12, cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
-            <div style={{ width:40, height:40, borderRadius:12, background:`${C.accent}20`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>📋</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:700, fontSize:13, color:C.accent }}>Nuovi rapportini</div>
-              <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>{rapAlert.length} nelle ultime 24 ore</div>
+          <Card onClick={()=>onSection("gestione")} style={{ marginBottom:12, borderLeft:`3px solid ${C.accent}`, padding:14, cursor:"pointer" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:12 }}>
+              <div style={{ width:38, height:38, borderRadius:10, background:C.accentDim, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                <ClipboardList size={18} color={C.accent} />
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:700, fontSize:13, color:C.text }}>Nuovi rapportini</div>
+                <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>Ultime 24 ore</div>
+              </div>
+              <div style={{ background:C.accent, color:"#fff", borderRadius:20, padding:"2px 9px", fontSize:11, fontWeight:800 }}>{rapAlert.length}</div>
             </div>
-            <div style={{ background:C.accent, color:"#000", borderRadius:20, padding:"2px 10px", fontSize:12, fontWeight:800 }}>{rapAlert.length}</div>
-          </div>
+          </Card>
         )}
 
         {/* Cantiere di oggi */}
         {cantiereOggi && (
-          <div onClick={()=>onSection("cantieri")} style={{ background:`linear-gradient(135deg, ${C.blue}60, ${C.accent}40)`, border:`1px solid ${C.accent}50`, borderRadius:14, padding:"16px 18px", marginBottom:16, cursor:"pointer" }}>
-            <div style={{ fontSize:11, color:"#a8d4f0", marginBottom:6 }}>📍 Oggi sei a:</div>
-            <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:22, color:C.text, marginBottom:4 }}>{cantiereOggi.cantiereName||cantiereOggi.projectName||"Cantiere"}</div>
-            {cantiereOggi.indirizzo && <div style={{ fontSize:12, color:"#a8d4f0cc" }}>{cantiereOggi.indirizzo}</div>}
-            {cantiereOggi.lavorazione && <div style={{ fontSize:11, color:C.accent, marginTop:6, fontWeight:600 }}>{cantiereOggi.lavorazione}</div>}
-          </div>
+          <Card onClick={()=>onSection("cantieri")} style={{ marginBottom:16, padding:16, cursor:"pointer", background:`linear-gradient(135deg, ${C.blue}, ${C.accent})`, border:"none" }}>
+            <div style={{ fontSize:10, color:"rgba(255,255,255,0.8)", fontWeight:600, letterSpacing:0.5, marginBottom:4 }}>OGGI LAVORI A</div>
+            <div style={{ fontSize:17, fontWeight:700, color:"#fff" }}>{cantiereOggi.cantiereName||cantiereOggi.projectName||"Cantiere assegnato"}</div>
+            {cantiereOggi.indirizzo && <div style={{ fontSize:12, color:"rgba(255,255,255,0.75)", marginTop:4 }}>{cantiereOggi.indirizzo}</div>}
+            {cantiereOggi.lavorazione && <div style={{ fontSize:11, color:"rgba(255,255,255,0.9)", marginTop:6, fontWeight:600 }}>{cantiereOggi.lavorazione}</div>}
+          </Card>
         )}
         {!cantiereOggi && user.ruolo === "operaio" && (
-          <div style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"14px 18px", marginBottom:16, textAlign:"center" }}>
+          <Card style={{ marginBottom:16, padding:14, textAlign:"center" }}>
             <div style={{ fontSize:13, color:C.textMuted }}>Nessun cantiere programmato oggi</div>
-          </div>
+          </Card>
         )}
 
         {/* Incarichi in sospeso */}
         {incarichi.length > 0 && (
-          <div onClick={()=>onSection("personale")} style={{ background:`${C.gold}12`, border:`1px solid ${C.gold}40`, borderRadius:14, padding:"14px 16px", marginBottom:16, cursor:"pointer", display:"flex", alignItems:"center", gap:12 }}>
-            <div style={{ width:40, height:40, borderRadius:12, background:`${C.gold}20`, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>⚡</div>
-            <div style={{ flex:1 }}>
-              <div style={{ fontWeight:700, fontSize:13, color:C.gold }}>{incarichi.length} incaric{incarichi.length===1?"o":"hi"} in attesa</div>
-              <div style={{ fontSize:11, color:C.textDim, marginTop:2 }}>{incarichi.slice(0,2).map(i=>i.titolo).join(" · ")}</div>
-            </div>
-          </div>
+          <>
+            <SecTitle label="Incarichi aperti" />
+            {incarichi.map((inc, i) => (
+              <Card key={i} style={{ marginBottom:8, padding:12 }}>
+                <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{inc.titolo || "Incarico"}</div>
+                <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>{inc.descrizione || ""}</div>
+              </Card>
+            ))}
+          </>
         )}
 
-        {/* Azioni rapide */}
-        <div style={{ fontSize:10, fontWeight:800, color:C.textMuted, letterSpacing:2, textTransform:"uppercase", marginBottom:14 }}>Accesso Rapido</div>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:8, marginBottom:24 }}>
-          {azioni.map(a => (
-            <button key={a.label} onClick={a.action}
-              style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:14, padding:"16px 8px 12px", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:10, WebkitTapHighlightColor:"transparent" }}
-              onTouchStart={e=>e.currentTarget.style.background=`${a.color}15`}
-              onTouchEnd={e=>e.currentTarget.style.background=C.card}>
-              <div style={{ width:48, height:48, borderRadius:14, background:`${a.color}18`, display:"flex", alignItems:"center", justifyContent:"center" }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={a.color} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  {a.path}
-                </svg>
-              </div>
-              <div style={{ fontSize:10, fontWeight:700, color:C.textDim, textAlign:"center", lineHeight:1.3, fontFamily:"Barlow,sans-serif" }}>{a.label}</div>
-            </button>
-          ))}
+        {/* Azioni rapide (grid 2x2) */}
+        <SecTitle label="Accesso rapido" />
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:24 }}>
+          {azioni.map(a => {
+            const IconComp = a.icon;
+            return (
+              <Card key={a.label} onClick={a.action} style={{ padding:18, cursor:"pointer", textAlign:"center" }}>
+                <div style={{ width:48, height:48, borderRadius:12, margin:"0 auto 10px", background:`${a.color}18`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                  <IconComp size={24} color={a.color} />
+                </div>
+                <div style={{ fontSize:13, fontWeight:700, color:C.text }}>{a.label}</div>
+              </Card>
+            );
+          })}
         </div>
 
-        {/* Stats */}
+        {/* Stats (solo manager) */}
         {!["operaio"].includes(user.ruolo) && (
           <>
-            <div style={{ fontSize:10, fontWeight:800, color:C.textMuted, letterSpacing:2, textTransform:"uppercase", marginBottom:12 }}>Riepilogo</div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+            <SecTitle label="Riepilogo" />
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:16 }}>
               {[
-                { l:"Cantieri", v:stats.cantieri, i:"🏗", c:C.accent },
-                { l:"Operai",   v:stats.operai,   i:"👷", c:C.green  },
-                { l:"Ferie",    v:stats.ferie,    i:"✈",  c:C.gold   },
-                { l:"Rapportini",v:stats.rap,     i:"📋", c:"#38bdf8"},
-              ].map(s => (
-                <div key={s.l} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:12, padding:"14px 16px", display:"flex", alignItems:"center", gap:12 }}>
-                  <div style={{ fontSize:24 }}>{s.i}</div>
-                  <div>
-                    <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:26, color:s.c, lineHeight:1 }}>{s.v}</div>
-                    <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>{s.l}</div>
-                  </div>
-                </div>
-              ))}
+                { l:"Cantieri",  v:stats.cantieri, icon:HardHat,       c:C.accent },
+                { l:"Operai",    v:stats.operai,   icon:User,           c:C.green  },
+                { l:"Ferie",     v:stats.ferie,    icon:Plane,          c:C.gold   },
+                { l:"Rapportini",v:stats.rap,      icon:ClipboardList,  c:C.bright },
+              ].map(s => {
+                const SIcon = s.icon;
+                return (
+                  <Card key={s.l} style={{ padding:"14px 16px", display:"flex", alignItems:"center", gap:12 }}>
+                    <div style={{ width:40, height:40, borderRadius:10, background:`${s.c}18`, display:"flex", alignItems:"center", justifyContent:"center" }}>
+                      <SIcon size={20} color={s.c} />
+                    </div>
+                    <div>
+                      <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:26, color:s.c, lineHeight:1 }}>{s.v}</div>
+                      <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>{s.l}</div>
+                    </div>
+                  </Card>
+                );
+              })}
             </div>
           </>
         )}
@@ -436,19 +447,68 @@ function Dashboard({ user, stats, onSection }) {
         {/* Ultimi rapportini */}
         {ultimiRap.length > 0 && (
           <>
-            <div style={{ fontSize:10, fontWeight:800, color:C.textMuted, letterSpacing:2, textTransform:"uppercase", marginBottom:12, marginTop:24 }}>Ultimi rapportini</div>
-            {ultimiRap.map(r => (
-              <div key={r.id} style={{ background:C.card, border:`1px solid ${C.border}`, borderRadius:10, padding:"10px 14px", marginBottom:6, display:"flex", alignItems:"center", gap:10 }}>
-                <div style={{ fontSize:11, color:C.textMuted, minWidth:60 }}>{r.date?.toDate?.()?.toLocaleDateString("it-IT")||r.date||""}</div>
-                <div style={{ flex:1, fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{r.projectName||r.cantiere||"—"}</div>
-                <div style={{ fontSize:12, color:C.accent, fontWeight:700 }}>{r.totaleOre||r.hoursWorked||"—"}h</div>
-              </div>
-            ))}
+            <SecTitle label="Ultimi rapportini" />
+            <div style={{ display:"flex", flexDirection:"column", gap:8, marginBottom:16 }}>
+              {ultimiRap.map(r => (
+                <Card key={r.id} style={{ padding:12, display:"flex", alignItems:"center", gap:12 }}>
+                  <Calendar size={18} color={C.accent} />
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:C.text }}>{r.date?.toDate?.()?.toLocaleDateString("it-IT")||r.date||""}</div>
+                    <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>{r.totaleOre||r.hoursWorked||0}h · {r.projectName||r.cantiere||"Cantiere"}</div>
+                  </div>
+                </Card>
+              ))}
+            </div>
           </>
         )}
       </div>
 
       {showRapForm && <FormRapportino user={user} onSaved={()=>{}} onClose={()=>setShowRapForm(false)} />}
+    </div>
+  );
+}
+
+// ─── IMPOSTAZIONI ────────────────────────────────────────────────────────────
+function Impostazioni({ user }) {
+  const { theme, setTheme, C } = useTheme();
+
+  return (
+    <div style={{ padding:"20px 16px 90px", background:C.bg, minHeight:"100vh" }} className="fu">
+      <div style={{ fontSize:22, fontWeight:700, color:C.text, marginBottom:20 }}>Impostazioni</div>
+
+      <SecTitle label="Aspetto" />
+      <Card style={{ marginBottom:16, padding:4 }}>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:4 }}>
+          <button onClick={()=>setTheme("light")}
+            style={{ padding:"12px", borderRadius:10, border:"none", background:theme==="light"?C.accent:"transparent", color:theme==="light"?"#fff":C.text, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"Barlow", display:"flex", alignItems:"center", justifyContent:"center", gap:8, transition:"all 0.15s" }}>
+            <Sun size={16} /> Chiaro
+          </button>
+          <button onClick={()=>setTheme("dark")}
+            style={{ padding:"12px", borderRadius:10, border:"none", background:theme==="dark"?C.accent:"transparent", color:theme==="dark"?"#fff":C.text, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"Barlow", display:"flex", alignItems:"center", justifyContent:"center", gap:8, transition:"all 0.15s" }}>
+            <Moon size={16} /> Scuro
+          </button>
+        </div>
+      </Card>
+
+      <SecTitle label="Account" />
+      <Card style={{ marginBottom:10, padding:14, display:"flex", alignItems:"center", gap:12 }}>
+        <Avatar name={`${user.nome} ${user.cognome||""}`} role={user.ruolo} size={44} />
+        <div style={{ flex:1 }}>
+          <div style={{ fontSize:14, fontWeight:600, color:C.text }}>{user.nome} {user.cognome||""}</div>
+          <div style={{ fontSize:12, color:C.textMuted, marginTop:2 }}>{user.email}</div>
+        </div>
+        <RoleBadge role={user.ruolo} />
+      </Card>
+
+      <Card style={{ marginBottom:10, padding:14 }}>
+        <div style={{ fontSize:12, color:C.textMuted, marginBottom:4 }}>Versione app</div>
+        <div style={{ fontSize:13, color:C.text, fontWeight:600 }}>v1.0.0 beta</div>
+      </Card>
+
+      <button onClick={()=>signOut(auth)}
+        style={{ width:"100%", padding:"14px", borderRadius:10, background:C.redDim, color:C.red, border:`1px solid ${C.red}40`, fontSize:14, fontWeight:700, cursor:"pointer", fontFamily:"Barlow", marginTop:16, display:"flex", alignItems:"center", justifyContent:"center", gap:8 }}>
+        <LogOut size={18} /> Esci
+      </button>
     </div>
   );
 }
@@ -3801,9 +3861,10 @@ export default function App() {
       { id:"regolamento",    icon:FileText,         label:"Regolamento" },
     ]),
     ...(isManager(user.ruolo)?[{ id:"gestione", icon:Settings, label:"Gestione" }]:[]),
+    { id:"impostazioni", icon:Settings, label:"Impostazioni" },
   ];
 
-  const titles = { dashboard:"Dashboard", cantieri:"Cantieri", chat:"Chat", personale:"Area Personale", cronoprogramma:"Cronoprogramma", procedure:"Procedure", regolamento:"Regolamento", gestione:"Gestione", appunti_hub:"Appunti cantiere", misuratore_hub:"Misuratore" };
+  const titles = { dashboard:"Dashboard", cantieri:"Cantieri", chat:"Chat", personale:"Area Personale", cronoprogramma:"Cronoprogramma", procedure:"Procedure", regolamento:"Regolamento", gestione:"Gestione", appunti_hub:"Appunti cantiere", misuratore_hub:"Misuratore", impostazioni:"Impostazioni" };
 
   return (
     <div style={{ height:"100dvh", width:"100%", background:C.bg, color:C.text, fontFamily:"Barlow,sans-serif", maxWidth:480, margin:"0 auto", display:"flex", flexDirection:"column", overflow:"hidden", position:"relative" }}>
@@ -3838,6 +3899,7 @@ export default function App() {
       {section==="appunti_hub"    && appuntiCantiere && <AppuntiCantiere user={user} projectId={appuntiCantiere.id} projectName={appuntiCantiere.clientName||appuntiCantiere.name} onBack={() => setAppuntiCantiere(null)} />}
       {section==="misuratore_hub" && !misuratoreProgetto && <MisuratoreHub user={user} onSelect={p => setMisuratoreProgetto(p)} />}
       {section==="misuratore_hub" && misuratoreProgetto && <MisuratoreDisegno user={user} projectId={misuratoreProgetto.id} projectName={misuratoreProgetto.clientName||misuratoreProgetto.name} onBack={() => setMisuratoreProgetto(null)} />}
+      {section==="impostazioni"  && <Impostazioni user={user} />}
 
       {/* Menu Altro — Bottom Sheet */}
       {altroOpen && (
