@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { auth, db, storage, functions } from "./firebase";
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged,
@@ -16,7 +16,10 @@ import { Home, HardHat, MessageCircle, User, Menu as MenuIcon,
          ChevronLeft, X, Plus, ChevronDown, Inbox,
          Plane, Activity, Sun, Moon, LogOut,
          UserPlus, Copy, Check, AlertCircle, Eye, EyeOff, Shield,
-         ChevronRight } from "lucide-react";
+         ChevronRight, GripVertical, Trash2, Save } from "lucide-react";
+import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 // ─── DESIGN SYSTEM ────────────────────────────────────────────────────────────
 // Palette importata da theme.js — default dark per retrocompatibilità
@@ -223,7 +226,7 @@ function LoginScreen({ onLogin }) {
           localStorage.removeItem("eb_pw");
         }
         const raw = { uid: cred.user.uid, ...userData };
-        onLogin({ ...raw, ruolo: getRuolo(raw) });
+        onLogin({ ...raw, ruolo: getRuolo(raw), mansione: raw.ruolo });
       } else setErr("Utente non trovato nel sistema.");
     } catch { setErr("Email o password non corretti."); }
     setLoading(false);
@@ -1529,6 +1532,8 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
     return [{ projectId:"", projectName:"", lavorazioni:[{ taskId:"", taskName:"", categoria:"", ore:0 }] }];
   });
 
+  const [taskPrioritarie, setTaskPrioritarie] = useState([]);
+
   useEffect(() => {
     getDocs(query(collection(db,"projects"),orderBy("name"))).then(s => setCantieri(s.docs.filter(d=>d.data().status==="active"||d.data().status==="draft").map(d=>({id:d.id,...d.data()}))));
     getDocs(query(collection(db,"timesheet_tasks"),orderBy("categoria"))).then(s => {
@@ -1536,7 +1541,27 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
     });
   }, []);
 
+  useEffect(() => {
+    const mansione = user.mansione || user.ruolo;
+    if (!mansione || RUOLI_STANDARD.includes(mansione)) return;
+    getDoc(doc(db, "lavorazioni_per_ruolo", mansione)).then(snap => {
+      if (snap.exists()) setTaskPrioritarie(snap.data().lavorazioni_ordinate || []);
+    }).catch(() => {});
+  }, [user]);
+
   const categorie = [...new Set(tasks.map(t=>t.categoria))].sort();
+
+  const gruppiTask = useMemo(() => {
+    if (!taskPrioritarie.length) return null;
+    const prioList = taskPrioritarie.map(tid => tasks.find(t => t.id === tid)).filter(Boolean);
+    const prioIds = new Set(prioList.map(t => t.id));
+    const categoriePrio = new Set(prioList.map(t => t.categoria).filter(Boolean));
+    const stessaCat = tasks.filter(t => !prioIds.has(t.id) && categoriePrio.has(t.categoria));
+    const stessaCatIds = new Set(stessaCat.map(t => t.id));
+    const altre = tasks.filter(t => !prioIds.has(t.id) && !stessaCatIds.has(t.id))
+      .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+    return { prioList, stessaCat, altre };
+  }, [tasks, taskPrioritarie]);
 
   const updBlock = (bi, field, val) => setBlocks(prev => prev.map((b,i) => {
     if (i!==bi) return b;
@@ -1629,7 +1654,19 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
                 <div style={{ flex:1 }}>
                   <Sel value={l.taskId} onChange={e=>updLav(bi,li,"taskId",e.target.value)}>
                     <option value="">Seleziona lavorazione...</option>
-                    {categorie.map(cat => (
+                    {gruppiTask ? (<>
+                      <optgroup label="⭐ Consigliate per te">
+                        {gruppiTask.prioList.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
+                      </optgroup>
+                      {gruppiTask.stessaCat.length > 0 && (
+                        <optgroup label="Stessa categoria">
+                          {gruppiTask.stessaCat.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
+                        </optgroup>
+                      )}
+                      <optgroup label="Altre">
+                        {gruppiTask.altre.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
+                      </optgroup>
+                    </>) : categorie.map(cat => (
                       <optgroup key={cat} label={cat}>
                         {tasks.filter(t=>t.categoria===cat).map(t=>(
                           <option key={t.id} value={t.id}>{t.nome}</option>
@@ -2056,6 +2093,7 @@ function Gestione({ user }) {
     {id:"calendari",l:"🗓 Calendari",  badge:null},
     {id:"utenti",   l:"👷 Utenti",     badge:null},
     {id:"accessi",  l:"🔑 Accessi",    badge:null},
+    {id:"lavPerRuolo", l:"🔧 Lavorazioni", badge:null},
   ];
 
   return (
@@ -2254,6 +2292,7 @@ function Gestione({ user }) {
         )}
 
         {tab==="accessi" && <GestioneAccessi />}
+        {tab==="lavPerRuolo" && <LavorazioniPerRuolo />}
       </div>
     </div>
   );
@@ -2526,6 +2565,124 @@ function CambioPasswordObbligatorio({ user, onDone }) {
             <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>Password aggiornata!</div>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ─── LAVORAZIONI PER RUOLO (admin config) ────────────────────────────────────
+function SortableTaskItem({ task, onRemove }) {
+  const { C } = useTheme();
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: task.id });
+  const style = { transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.5 : 1 };
+  return (
+    <div ref={setNodeRef} style={{ ...style, display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", marginBottom: 6, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 10 }}>
+      <div {...attributes} {...listeners} style={{ cursor: "grab", touchAction: "none", color: C.textMuted }}><GripVertical size={16} /></div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{task.nome || task.name}</div>
+        {task.categoria && <div style={{ fontSize: 10, color: C.textMuted, marginTop: 2 }}>{task.categoria}</div>}
+      </div>
+      <button onClick={onRemove} style={{ background: "none", border: "none", color: C.red, cursor: "pointer", padding: 4 }}><Trash2 size={15} /></button>
+    </div>
+  );
+}
+
+function LavorazioniPerRuolo() {
+  const { C } = useTheme();
+  const [mansioni, setMansioni] = useState([]);
+  const [selectedMansione, setSelectedMansione] = useState("");
+  const [allTasks, setAllTasks] = useState([]);
+  const [prioritarie, setPrioritarie] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+
+  useEffect(() => {
+    getDocs(query(collection(db, "utenti"), where("active", "==", true))).then(snap => {
+      const distinct = new Set();
+      snap.docs.forEach(d => { const r = d.data().ruolo; if (r && !RUOLI_STANDARD.includes(r)) distinct.add(r); });
+      setMansioni(Array.from(distinct).sort());
+    });
+  }, []);
+
+  useEffect(() => {
+    getDocs(query(collection(db, "timesheet_tasks"), orderBy("categoria"))).then(snap => {
+      setAllTasks(snap.docs.filter(d => d.data().attivo !== false).map(d => ({ id: d.id, ...d.data() })));
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!selectedMansione) { setPrioritarie([]); return; }
+    getDoc(doc(db, "lavorazioni_per_ruolo", selectedMansione)).then(snap => {
+      if (snap.exists()) {
+        const mapped = (snap.data().lavorazioni_ordinate || []).map(tid => allTasks.find(t => t.id === tid)).filter(Boolean);
+        setPrioritarie(mapped);
+      } else setPrioritarie([]);
+    });
+  }, [selectedMansione, allTasks]);
+
+  const aggiungi = (task) => { if (!prioritarie.some(p => p.id === task.id)) setPrioritarie([...prioritarie, task]); };
+  const rimuovi = (id) => setPrioritarie(prioritarie.filter(p => p.id !== id));
+  const onDragEnd = (event) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setPrioritarie(arrayMove(prioritarie, prioritarie.findIndex(p => p.id === active.id), prioritarie.findIndex(p => p.id === over.id)));
+  };
+
+  const salva = async () => {
+    if (!selectedMansione) return;
+    setSaving(true);
+    try {
+      await setDoc(doc(db, "lavorazioni_per_ruolo", selectedMansione), {
+        mansione: selectedMansione, lavorazioni_ordinate: prioritarie.map(p => p.id),
+        updatedAt: serverTimestamp(), updatedBy: auth.currentUser?.uid || ""
+      });
+      setFeedback("Salvato!"); setTimeout(() => setFeedback(""), 2000);
+    } catch (e) { setFeedback("Errore: " + e.message); }
+    setSaving(false);
+  };
+
+  const disponibili = allTasks.filter(t => !prioritarie.some(p => p.id === t.id));
+  const categorie = [...new Set(disponibili.map(t => t.categoria).filter(Boolean))].sort();
+
+  return (
+    <div style={{ padding: "16px" }}>
+      <SecTitle label="Seleziona mansione" />
+      <Sel value={selectedMansione} onChange={e => setSelectedMansione(e.target.value)}>
+        <option value="">-- scegli --</option>
+        {mansioni.map(m => <option key={m} value={m}>{m}</option>)}
+      </Sel>
+      {selectedMansione && (
+        <>
+          <div style={{ marginTop: 20 }}>
+            <SecTitle label={`Prioritarie per ${selectedMansione} (trascina per riordinare)`} />
+            {prioritarie.length === 0 ? (
+              <Empty msg="Nessuna lavorazione prioritaria. Aggiungine dalla lista sotto." icon={Plus} />
+            ) : (
+              <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+                <SortableContext items={prioritarie.map(p => p.id)} strategy={verticalListSortingStrategy}>
+                  {prioritarie.map(task => <SortableTaskItem key={task.id} task={task} onRemove={() => rimuovi(task.id)} />)}
+                </SortableContext>
+              </DndContext>
+            )}
+            <Btn label={saving ? "Salvataggio..." : "Salva ordine"} onClick={salva} disabled={saving} icon={Save} />
+            {feedback && <div style={{ marginTop: 10, fontSize: 12, color: feedback.startsWith("Errore") ? C.red : C.green, textAlign: "center" }}>{feedback}</div>}
+          </div>
+          <div style={{ marginTop: 28 }}>
+            <SecTitle label="Disponibili (tocca per aggiungere)" />
+            {categorie.map(cat => (
+              <div key={cat} style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: C.accent, letterSpacing: 0.5, marginBottom: 6 }}>{cat.toUpperCase()}</div>
+                {disponibili.filter(t => t.categoria === cat).map(task => (
+                  <Card key={task.id} onClick={() => aggiungi(task)} style={{ padding: "10px 12px", marginBottom: 6, display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                    <Plus size={14} color={C.accent} />
+                    <span style={{ fontSize: 13, color: C.text }}>{task.nome || task.name}</span>
+                  </Card>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -4241,7 +4398,7 @@ export default function App() {
       if (fu) {
         const userData = await findUserDoc(fu.uid);
         if (userData) {
-          const u = { uid: fu.uid, ...userData, ruolo: getRuolo(userData) };
+          const u = { uid: fu.uid, ...userData, ruolo: getRuolo(userData), mansione: userData.ruolo };
           setUser(u);
           setSection(u.ruolo==="operaio"?"personale":"dashboard");
           // Init notifiche push
