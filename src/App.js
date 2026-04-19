@@ -790,9 +790,17 @@ function Cantieri({ user }) {
   const canMod = canEdit(user.ruolo);
 
   useEffect(() => {
-    const unsub = onSnapshot(query(collection(db,"projects"),orderBy("name")), s =>
-      setList(s.docs.map(d=>({id:d.id,...d.data()})))
-    );
+    const statusOrder = { active: 0, draft: 1 };
+    const unsub = onSnapshot(query(collection(db,"projects"),orderBy("name")), s => {
+      const mapped = s.docs.map(d => ({ id: d.id, ...d.data() }));
+      mapped.sort((a, b) => {
+        const sa = statusOrder[a.status] ?? 2;
+        const sb = statusOrder[b.status] ?? 2;
+        if (sa !== sb) return sa - sb;
+        return (a.name || "").localeCompare(b.name || "");
+      });
+      setList(mapped);
+    });
     return unsub;
   }, []);
 
@@ -1058,26 +1066,60 @@ function Cantieri({ user }) {
   }
 
   // Lista cantieri
-  return (
-    <div style={{ paddingBottom:80, flex:1, overflowY:"auto", padding:"16px 16px 80px" }} className="fu">
-      <SecTitle label={`${list.length} commesse`} />
-      {list.length===0 && <Empty icon="🏗" msg="Nessuna commessa ancora" />}
-      {list.map(c => (
-        <Card key={c.id} onClick={()=>{ setSel(c); setTab("anagrafica"); }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:6 }}>
-            <div style={{ flex:1 }}>
-              {c.code && <div style={{ fontSize:10, color:C.accent, fontWeight:700, letterSpacing:1, marginBottom:3 }}>{c.code}</div>}
-              <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:18 }}>{c.name}</div>
-              {c.clientName && <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>👤 {c.clientName}</div>}
-              {c.address && <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>📍 {c.address}</div>}
-            </div>
-            <span style={{ background:`${STATUS_COLOR[c.status]||C.textMuted}20`, color:STATUS_COLOR[c.status]||C.textMuted, border:`1px solid ${STATUS_COLOR[c.status]||C.textMuted}40`, borderRadius:6, padding:"2px 8px", fontSize:10, fontWeight:700, flexShrink:0 }}>
-              {STATUS_LABEL[c.status]||c.status}
-            </span>
-          </div>
+  const grouped = useMemo(() => {
+    const out = { active: [], draft: [], altri: [] };
+    for (const c of list) {
+      if (c.status === "active") out.active.push(c);
+      else if (c.status === "draft") out.draft.push(c);
+      else out.altri.push(c);
+    }
+    return out;
+  }, [list]);
 
-        </Card>
-      ))}
+  const renderCantiereCard = (c) => (
+    <Card key={c.id} onClick={() => { setSel(c); setTab("anagrafica"); }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+        <div style={{ flex: 1 }}>
+          {c.code && <div style={{ fontSize: 10, color: C.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 3 }}>{c.code}</div>}
+          <div style={{ fontFamily: "Barlow Condensed", fontWeight: 800, fontSize: 18 }}>{c.name}</div>
+          {c.clientName && <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>{c.clientName}</div>}
+          {c.address && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{c.address}</div>}
+        </div>
+        <span style={{ background: `${STATUS_COLOR[c.status] || C.textMuted}20`, color: STATUS_COLOR[c.status] || C.textMuted, border: `1px solid ${STATUS_COLOR[c.status] || C.textMuted}40`, borderRadius: 6, padding: "2px 8px", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
+          {STATUS_LABEL[c.status] || c.status}
+        </span>
+      </div>
+    </Card>
+  );
+
+  return (
+    <div style={{ paddingBottom: 80, flex: 1, overflowY: "auto", padding: "16px 16px 80px" }} className="fu">
+      <SecTitle label={`${list.length} commesse`} />
+      {list.length === 0 && <Empty icon={HardHat} msg="Nessuna commessa ancora" />}
+      {grouped.active.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.8, color: C.green, margin: "10px 0 8px", textTransform: "uppercase" }}>
+            ATTIVI · {grouped.active.length}
+          </div>
+          {grouped.active.map(renderCantiereCard)}
+        </>
+      )}
+      {grouped.draft.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.8, color: C.gold, margin: "16px 0 8px", textTransform: "uppercase" }}>
+            BOZZE · {grouped.draft.length}
+          </div>
+          {grouped.draft.map(renderCantiereCard)}
+        </>
+      )}
+      {grouped.altri.length > 0 && (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.8, color: C.textMuted, margin: "16px 0 8px", textTransform: "uppercase" }}>
+            ALTRI · {grouped.altri.length}
+          </div>
+          {grouped.altri.map(renderCantiereCard)}
+        </>
+      )}
     </div>
   );
 }
@@ -1506,6 +1548,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
                    || rapportinoDaModificare?.status === "approved"
                    || rapportinoDaModificare?.status === "rejected";
   const [showConfermaInvio, setShowConfermaInvio] = useState(false);
+  const [noteAperte, setNoteAperte] = useState({});
   const [cantieri, setCantieri] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [date, setDate] = useState(() => {
@@ -1528,12 +1571,12 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
       rapportinoDaModificare.lavorazioni.forEach(l => {
         const pid = l.projectId || rapportinoDaModificare.projectId || "";
         if (!grouped[pid]) grouped[pid] = { projectId: pid, projectName: l.projectName || rapportinoDaModificare.projectName || "", lavorazioni: [] };
-        grouped[pid].lavorazioni.push({ taskId: l.taskId || "", taskName: l.taskName || "", categoria: l.categoria || "", ore: l.ore || 0 });
+        grouped[pid].lavorazioni.push({ taskId: l.taskId || "", taskName: l.taskName || "", categoria: l.categoria || "", ore: l.ore || 0, nota: l.nota || "" });
       });
       const result = Object.values(grouped);
       if (result.length) return result;
     }
-    return [{ projectId:"", projectName:"", lavorazioni:[{ taskId:"", taskName:"", categoria:"", ore:0 }] }];
+    return [{ projectId:"", projectName:"", lavorazioni:[{ taskId:"", taskName:"", categoria:"", ore:0, nota:"" }] }];
   });
 
   const [taskPrioritarie, setTaskPrioritarie] = useState([]);
@@ -1596,7 +1639,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
     ...b, lavorazioni: b.lavorazioni.filter((_,j)=>j!==li)
   }));
 
-  const addBlock = () => setBlocks(prev => [...prev, { projectId:"", projectName:"", lavorazioni:[{ taskId:"", taskName:"", categoria:"", ore:0 }] }]);
+  const addBlock = () => setBlocks(prev => [...prev, { projectId:"", projectName:"", lavorazioni:[{ taskId:"", taskName:"", categoria:"", ore:0, nota:"" }] }]);
   const removeBlock = (bi) => setBlocks(prev => prev.filter((_,i)=>i!==bi));
 
   const canSave = blocks.every(b => b.projectId && b.lavorazioni.every(l=>l.taskId&&l.ore>0));
@@ -1668,38 +1711,59 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
           </div>
           <div style={{ padding:"10px 12px" }}>
             <div style={{ fontSize:10, color:C.textMuted, fontWeight:700, marginBottom:6 }}>LAVORAZIONI</div>
-            {b.lavorazioni.map((l,li) => (
-              <div key={li} style={{ display:"flex", gap:6, marginBottom:8, alignItems:"center" }}>
-                <div style={{ flex:1 }}>
-                  <Sel value={l.taskId} onChange={e=>updLav(bi,li,"taskId",e.target.value)}>
-                    <option value="">Seleziona lavorazione...</option>
-                    {gruppiTask ? (<>
-                      <optgroup label="⭐ Consigliate per te">
-                        {gruppiTask.prioList.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
-                      </optgroup>
-                      {gruppiTask.stessaCat.length > 0 && (
-                        <optgroup label="Stessa categoria">
-                          {gruppiTask.stessaCat.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
-                        </optgroup>
-                      )}
-                      <optgroup label="Altre">
-                        {gruppiTask.altre.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
-                      </optgroup>
-                    </>) : categorie.map(cat => (
-                      <optgroup key={cat} label={cat}>
-                        {tasks.filter(t=>t.categoria===cat).map(t=>(
-                          <option key={t.id} value={t.id}>{t.nome}</option>
+            {b.lavorazioni.map((l,li) => {
+              const noteKey = `${bi}-${li}`;
+              const notaAperta = noteAperte[noteKey] || !!l.nota;
+              return (
+                <div key={li} style={{ marginBottom:10 }}>
+                  <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                    <div style={{ flex:1 }}>
+                      <Sel value={l.taskId} onChange={e=>updLav(bi,li,"taskId",e.target.value)}>
+                        <option value="">Seleziona lavorazione...</option>
+                        {gruppiTask ? (<>
+                          <optgroup label="⭐ Consigliate per te">
+                            {gruppiTask.prioList.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
+                          </optgroup>
+                          {gruppiTask.stessaCat.length > 0 && (
+                            <optgroup label="Stessa categoria">
+                              {gruppiTask.stessaCat.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
+                            </optgroup>
+                          )}
+                          <optgroup label="Altre">
+                            {gruppiTask.altre.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
+                          </optgroup>
+                        </>) : categorie.map(cat => (
+                          <optgroup key={cat} label={cat}>
+                            {tasks.filter(t=>t.categoria===cat).map(t=>(
+                              <option key={t.id} value={t.id}>{t.nome}</option>
+                            ))}
+                          </optgroup>
                         ))}
-                      </optgroup>
-                    ))}
-                  </Sel>
+                      </Sel>
+                    </div>
+                    <Inp type="number" placeholder="ore" value={l.ore||""} onChange={e=>updLav(bi,li,"ore",Number(e.target.value))} style={{ width:70, marginBottom:0 }} />
+                    {b.lavorazioni.length>1 && (
+                      <button onClick={()=>removeLav(bi,li)} style={{ background:"none", border:"none", color:C.textMuted, fontSize:16, cursor:"pointer" }}>✕</button>
+                    )}
+                  </div>
+                  {!readOnly && (
+                    <div style={{ marginTop: 4 }}>
+                      {!notaAperta ? (
+                        <button type="button" onClick={() => setNoteAperte(prev => ({ ...prev, [noteKey]: true }))}
+                          style={{ background: "none", border: "none", color: C.accent, fontSize: 12, cursor: "pointer", padding: "4px 0", display: "flex", alignItems: "center", gap: 4, fontFamily: "Barlow" }}>
+                          <Plus size={12} /> Aggiungi nota
+                        </button>
+                      ) : (
+                        <Txta placeholder="Nota (es: rifinitura angoli, materiale finito, ecc.)" value={l.nota || ""} onChange={e => updLav(bi, li, "nota", e.target.value)} rows={2} />
+                      )}
+                    </div>
+                  )}
+                  {readOnly && l.nota && (
+                    <div style={{ fontSize: 12, color: C.textDim, fontStyle: "italic", marginTop: 4, paddingLeft: 2 }}>{l.nota}</div>
+                  )}
                 </div>
-                <Inp type="number" placeholder="ore" value={l.ore||""} onChange={e=>updLav(bi,li,"ore",Number(e.target.value))} style={{ width:70, marginBottom:0 }} />
-                {b.lavorazioni.length>1 && (
-                  <button onClick={()=>removeLav(bi,li)} style={{ background:"none", border:"none", color:C.textMuted, fontSize:16, cursor:"pointer" }}>✕</button>
-                )}
-              </div>
-            ))}
+              );
+            })}
             <button onClick={()=>addLav(bi)} style={{ background:"none", border:`1px dashed ${C.border}`, borderRadius:6, color:C.textMuted, fontSize:11, padding:"5px 12px", cursor:"pointer", fontFamily:"Barlow", width:"100%" }}>
               + Aggiungi lavorazione
             </button>
