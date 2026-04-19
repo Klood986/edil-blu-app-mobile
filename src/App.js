@@ -10,27 +10,9 @@ import {
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 // ─── DESIGN SYSTEM ────────────────────────────────────────────────────────────
-const C = {
-  bg:           "#070f1e",
-  surface:      "#0d1f3c",
-  card:         "#112244",
-  border:       "#1e3a6a",
-  borderLight:  "#2a5090",
-  mid:          "#1a3a6b",
-  blue:         "#1d5fa8",
-  bright:       "#2d7dd2",
-  accent:       "#4facde",
-  accentDim:    "rgba(79,172,222,0.15)",
-  gold:         "#f0a500",
-  goldDim:      "rgba(240,165,0,0.15)",
-  green:        "#22c98a",
-  greenDim:     "rgba(34,201,138,0.12)",
-  red:          "#e05470",
-  redDim:       "rgba(224,84,112,0.12)",
-  text:         "#e8f0fe",
-  textDim:      "#8baac8",
-  textMuted:    "#4a6a8a",
-};
+// Palette importata da theme.js — default dark per retrocompatibilità
+import { themes } from "./theme";
+const C = themes.dark;
 
 const ROLES = {
   admin:           { label: "Admin",           color: C.gold  },
