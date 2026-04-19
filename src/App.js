@@ -42,6 +42,15 @@ const getRuolo = (u) => {
 const canEdit  = (r) => ["admin","amministrazione","ufficio_tecnico"].includes(r);
 const isManager = (r) => ["admin","amministrazione"].includes(r);
 
+// Trova documento utente per UID Auth: prima per doc ID, poi per campo authUid
+async function findUserDoc(uid) {
+  const byId = await getDoc(doc(db, "utenti", uid));
+  if (byId.exists()) return { id: byId.id, ...byId.data() };
+  const q = await getDocs(query(collection(db, "utenti"), where("authUid", "==", uid)));
+  if (!q.empty) { const d = q.docs[0]; return { id: d.id, ...d.data() }; }
+  return null;
+}
+
 // ─── COMPONENTI BASE ──────────────────────────────────────────────────────────
 const buildGlobalCss = (C) => `
   @import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800&family=Barlow+Condensed:wght@600;700;800&display=swap');
@@ -203,8 +212,8 @@ function LoginScreen({ onLogin }) {
     setLoading(true); setErr("");
     try {
       const cred = await signInWithEmailAndPassword(auth, email, pw);
-      const snap = await getDoc(doc(db, "utenti", cred.user.uid));
-      if (snap.exists()) {
+      const userData = await findUserDoc(cred.user.uid);
+      if (userData) {
         if (ricordami) {
           localStorage.setItem("eb_email", email);
           localStorage.setItem("eb_pw", pw);
@@ -212,7 +221,7 @@ function LoginScreen({ onLogin }) {
           localStorage.removeItem("eb_email");
           localStorage.removeItem("eb_pw");
         }
-        const raw = { uid: cred.user.uid, ...snap.data() };
+        const raw = { uid: cred.user.uid, ...userData };
         onLogin({ ...raw, ruolo: getRuolo(raw) });
       } else setErr("Utente non trovato nel sistema.");
     } catch { setErr("Email o password non corretti."); }
@@ -4018,10 +4027,9 @@ export default function App() {
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (fu) => {
       if (fu) {
-        const snap = await getDoc(doc(db,"utenti",fu.uid));
-        if (snap.exists()) {
-          const raw = { uid:fu.uid, ...snap.data() };
-          const u = { ...raw, ruolo: getRuolo(raw) };
+        const userData = await findUserDoc(fu.uid);
+        if (userData) {
+          const u = { uid: fu.uid, ...userData, ruolo: getRuolo(userData) };
           setUser(u);
           setSection(u.ruolo==="operaio"?"personale":"dashboard");
           // Init notifiche push
@@ -4033,7 +4041,7 @@ export default function App() {
                   if (perm !== "granted") return;
                   const messaging = getMessaging();
                   const token = await getToken(messaging, { vapidKey: process.env.REACT_APP_FCM_VAPID_KEY });
-                  if (token) await updateDoc(doc(db,"utenti",fu.uid), { fcmToken: token });
+                  if (token) await updateDoc(doc(db,"utenti", userData.id), { fcmToken: token });
                 } catch(e) { console.log("FCM non disponibile:", e.message); }
               }).catch(() => {});
             }
