@@ -321,9 +321,8 @@ function Dashboard({ user, stats, onSection }) {
   return (
     <div style={{ paddingBottom:90, flex:1, overflowY:"auto", background:C.bg, minHeight:"100vh" }} className="fu">
 
-      {/* Header con logo + saluto */}
+      {/* Header saluto */}
       <div style={{ padding:"20px 20px 24px", background:C.surface, borderBottom:`1px solid ${C.border}`, display:"flex", alignItems:"center", gap:14 }}>
-        <img src="/logo192.png" alt="Edil Blu" style={{ width:44, height:44, borderRadius:10 }} />
         <div style={{ flex:1 }}>
           <div style={{ fontSize:11, color:C.textMuted, fontWeight:600, letterSpacing:0.5 }}>{saluto.toUpperCase()}</div>
           <div style={{ fontSize:19, fontWeight:700, color:C.text, marginTop:2 }}>{user.nome} {user.cognome||""}</div>
