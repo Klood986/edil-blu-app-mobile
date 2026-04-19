@@ -841,6 +841,16 @@ function Cantieri({ user }) {
   const fileRef = useRef();
   const [uploading, setUploading] = useState(false);
 
+  const grouped = useMemo(() => {
+    const out = { active: [], draft: [], altri: [] };
+    for (const c of list) {
+      if (c.status === "active") out.active.push(c);
+      else if (c.status === "draft") out.draft.push(c);
+      else out.altri.push(c);
+    }
+    return out;
+  }, [list]);
+
   const STATUS_COLOR = { active:C.green, draft:C.gold, suspended:C.gold, completed:C.textMuted, cancelled:C.red };
   const STATUS_LABEL = { active:"Attivo", draft:"Bozza", suspended:"Sospeso", completed:"Completato", cancelled:"Annullato" };
 
@@ -1066,16 +1076,6 @@ function Cantieri({ user }) {
   }
 
   // Lista cantieri
-  const grouped = useMemo(() => {
-    const out = { active: [], draft: [], altri: [] };
-    for (const c of list) {
-      if (c.status === "active") out.active.push(c);
-      else if (c.status === "draft") out.draft.push(c);
-      else out.altri.push(c);
-    }
-    return out;
-  }, [list]);
-
   const renderCantiereCard = (c) => (
     <Card key={c.id} onClick={() => { setSel(c); setTab("anagrafica"); }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
