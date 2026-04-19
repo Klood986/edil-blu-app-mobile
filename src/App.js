@@ -1502,6 +1502,10 @@ function CalendarioSettimanale({ user, targetUserId, targetUserNome, canWrite })
 // ─── FORM RAPPORTINO (allineato ERP) ─────────────────────────────────────────
 function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
   const isEdit = !!rapportinoDaModificare;
+  const readOnly = rapportinoDaModificare?.status === "submitted"
+                   || rapportinoDaModificare?.status === "approved"
+                   || rapportinoDaModificare?.status === "rejected";
+  const [showConfermaInvio, setShowConfermaInvio] = useState(false);
   const [cantieri, setCantieri] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [date, setDate] = useState(() => {
@@ -1597,39 +1601,54 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
 
   const canSave = blocks.every(b => b.projectId && b.lavorazioni.every(l=>l.taskId&&l.ore>0));
 
-  const save = async () => {
+  const save = async (submitted = false) => {
     if (!canSave) return;
     setSaving(true);
-    const allLavs = blocks.flatMap(b => b.lavorazioni.map(l=>({ ...l, projectId:b.projectId, projectName:b.projectName })));
-    const totaleOre = allLavs.reduce((s,l)=>s+Number(l.ore),0);
-    const firstBlock = blocks[0];
-    const data = {
-      workerId: user.uid,
-      workerName: user.nome + (user.cognome ? " "+user.cognome : ""),
-      projectId: firstBlock.projectId,
-      projectName: firstBlock.projectName,
-      lavorazioni: allLavs,
-      blocks,
-      cantieri: blocks.map(b=>({ projectId:b.projectId, projectName:b.projectName })),
-      totaleOre,
-      hoursWorked: totaleOre,
-      taskDescription: allLavs.map(l=>l.taskName).join(", "),
-      noPasto,
-      note: note.trim(),
-      date: new Date(date),
-    };
-    if (isEdit) {
-      await updateDoc(doc(db, "timesheets", rapportinoDaModificare.id), { ...data, updatedAt: serverTimestamp() });
-    } else {
-      await addDoc(collection(db,"timesheets"), { ...data, status: "draft", createdAt: serverTimestamp() });
+    try {
+      const allLavs = blocks.flatMap(b => b.lavorazioni.map(l=>({ ...l, projectId:b.projectId, projectName:b.projectName })));
+      const totaleOre = allLavs.reduce((s,l)=>s+Number(l.ore),0);
+      const firstBlock = blocks[0];
+      const data = {
+        workerId: user.uid,
+        workerName: user.nome + (user.cognome ? " "+user.cognome : ""),
+        projectId: firstBlock.projectId,
+        projectName: firstBlock.projectName,
+        lavorazioni: allLavs,
+        blocks,
+        cantieri: blocks.map(b=>({ projectId:b.projectId, projectName:b.projectName })),
+        totaleOre,
+        hoursWorked: totaleOre,
+        taskDescription: allLavs.map(l=>l.taskName).join(", "),
+        noPasto,
+        note: note.trim(),
+        date: new Date(date),
+        status: submitted ? "submitted" : "draft",
+      };
+      if (submitted) {
+        data.submittedAt = serverTimestamp();
+        data.submittedBy = auth.currentUser?.uid || "";
+      }
+      if (rapportinoDaModificare?.id) {
+        await updateDoc(doc(db, "timesheets", rapportinoDaModificare.id), { ...data, updatedAt: serverTimestamp() });
+      } else {
+        await addDoc(collection(db,"timesheets"), { ...data, createdAt: serverTimestamp() });
+      }
+      onSaved();
+      onClose();
+    } catch (e) {
+      alert("Errore salvataggio: " + (e.message || "riprova"));
     }
     setSaving(false);
-    onSaved();
-    onClose();
   };
 
   return (
-    <Modal title={isEdit ? "Modifica Rapportino" : "Nuovo Rapportino"} onClose={onClose}>
+    <Modal title={readOnly ? `Rapportino ${rapportinoDaModificare.status}` : isEdit ? "Modifica Rapportino" : "Nuovo Rapportino"} onClose={onClose}>
+      {readOnly && (
+        <div style={{ padding: "12px 14px", background: `${C.accent}15`, border: `1px solid ${C.accent}40`, borderRadius: 10, marginBottom: 14, display: "flex", alignItems: "center", gap: 10, fontSize: 13, color: C.accent }}>
+          <AlertCircle size={18} />
+          <span>Questo rapportino è stato inviato e non può essere modificato.</span>
+        </div>
+      )}
       {/* Data */}
       <div style={{ fontSize:10, color:C.textMuted, fontWeight:700, marginBottom:4 }}>DATA</div>
       <Inp type="date" value={date} onChange={e=>setDate(e.target.value)} />
@@ -1701,7 +1720,30 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
       {/* Note */}
       <Txta placeholder="Note aggiuntive..." value={note} onChange={e=>setNote(e.target.value)} rows={2} />
 
-      <Btn label={saving ? "Salvataggio..." : isEdit ? "✓ Salva modifiche" : "✓ Invia Rapportino"} onClick={save} disabled={saving||!canSave} />
+      {!readOnly && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 10, marginTop: 16 }}>
+          <Btn label={saving ? "..." : "Salva bozza"} variant="secondary" onClick={() => save(false)} disabled={saving || !canSave} />
+          <Btn label={saving ? "Invio..." : "Invia rapportino →"} onClick={() => setShowConfermaInvio(true)} disabled={saving || !canSave} />
+        </div>
+      )}
+
+      {showConfermaInvio && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 600, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setShowConfermaInvio(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, maxWidth: 380, width: "100%" }}>
+            <div style={{ width: 54, height: 54, borderRadius: 14, background: `${C.accent}20`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+              <ClipboardList size={28} color={C.accent} />
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: C.text, textAlign: "center", marginBottom: 8 }}>Inviare il rapportino?</div>
+            <div style={{ fontSize: 13, color: C.textMuted, textAlign: "center", lineHeight: 1.5, marginBottom: 20 }}>
+              Dopo l'invio il rapportino sarà inviato per l'approvazione e <b style={{ color: C.text }}>non potrai più modificarlo</b>.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Btn label="Annulla" variant="secondary" onClick={() => setShowConfermaInvio(false)} />
+              <Btn label={saving ? "Invio..." : "Conferma invio"} onClick={() => { setShowConfermaInvio(false); save(true); }} disabled={saving} />
+            </div>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -1862,7 +1904,7 @@ function AreaPersonale({ user, onSection }) {
                   const statoCol = r.status === "approved" ? C.green : r.status === "rejected" ? C.red : isDraft ? C.gold : C.accent;
                   const statoLabel = r.status === "approved" ? "Approvato" : r.status === "rejected" ? "Rifiutato" : isDraft ? "Bozza" : "Inviato";
                   return (
-                    <Card key={r.id} onClick={() => { if (isDraft) { setRapportinoEdit(r); setShowRap(true); } }} style={{ padding: 12, cursor: isDraft ? "pointer" : "default" }}>
+                    <Card key={r.id} onClick={() => { setRapportinoEdit(r); setShowRap(true); }} style={{ padding: 12, cursor: "pointer" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                         <Calendar size={18} color={statoCol} />
                         <div style={{ flex: 1 }}>
@@ -1900,7 +1942,7 @@ function AreaPersonale({ user, onSection }) {
             const lbl = isDraft ? "Bozza" : (stLabel[r.status] || r.status);
             const modificabile = isDraft || r.status === "submitted" || r.status === "pending";
             return (
-              <Card key={r.id} onClick={() => { if (isDraft) { setRapportinoEdit(r); setShowRap(true); } }} style={{ cursor: isDraft ? "pointer" : "default" }}>
+              <Card key={r.id} onClick={() => { setRapportinoEdit(r); setShowRap(true); }} style={{ cursor: "pointer" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 700, fontSize: 15 }}>
