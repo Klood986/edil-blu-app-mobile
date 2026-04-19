@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { auth, db, storage } from "./firebase";
+import { auth, db, storage, functions } from "./firebase";
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged,
+  updatePassword,
 } from "firebase/auth";
+import { httpsCallable } from "firebase/functions";
 import {
   collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc,
   query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion,
@@ -12,7 +14,8 @@ import { useTheme } from "./ThemeContext";
 import { Home, HardHat, MessageCircle, User, Menu as MenuIcon,
          Calendar, ClipboardList, Camera, Ruler, FileText, Settings,
          ChevronLeft, X, Plus, ChevronDown, Inbox,
-         Plane, Activity, Sun, Moon, LogOut } from "lucide-react";
+         Plane, Activity, Sun, Moon, LogOut,
+         UserPlus, Copy, Check, AlertCircle, Eye, EyeOff, Shield } from "lucide-react";
 
 // ─── DESIGN SYSTEM ────────────────────────────────────────────────────────────
 // Palette importata da theme.js — default dark per retrocompatibilità
@@ -1873,6 +1876,7 @@ function Gestione({ user }) {
     {id:"programmi",l:"📅 Programmi",  badge:null},
     {id:"calendari",l:"🗓 Calendari",  badge:null},
     {id:"utenti",   l:"👷 Utenti",     badge:null},
+    {id:"accessi",  l:"🔑 Accessi",    badge:null},
   ];
 
   return (
@@ -2069,7 +2073,238 @@ function Gestione({ user }) {
             </Card>
           </>
         )}
+
+        {tab==="accessi" && <GestioneAccessi />}
       </div>
+    </div>
+  );
+}
+
+// ─── GESTIONE ACCESSI ────────────────────────────────────────────────────────
+function GestioneAccessi() {
+  const { C } = useTheme();
+  const [operai, setOperai] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [modalOperaio, setModalOperaio] = useState(null);
+  const [modalEmail, setModalEmail] = useState("");
+  const [processing, setProcessing] = useState(false);
+  const [error, setError] = useState("");
+  const [credenziali, setCredenziali] = useState(null);
+  const [copiato, setCopiato] = useState(false);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      query(collection(db, "utenti"), orderBy("cognome")),
+      (snap) => {
+        setOperai(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+    return () => unsub();
+  }, []);
+
+  const apriModal = (operaio) => {
+    setModalOperaio(operaio);
+    setModalEmail(operaio.email || "");
+    setError("");
+    setCredenziali(null);
+  };
+
+  const chiudiModal = () => {
+    setModalOperaio(null);
+    setCredenziali(null);
+    setError("");
+  };
+
+  const attivaAccesso = async () => {
+    if (!modalOperaio) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(modalEmail)) {
+      setError("Email non valida");
+      return;
+    }
+    setProcessing(true);
+    setError("");
+    try {
+      const callable = httpsCallable(functions, "activateWorkerAccount");
+      const result = await callable({ utenteId: modalOperaio.id, email: modalEmail });
+      setCredenziali(result.data);
+    } catch (e) {
+      setError(e.message || "Errore durante l'attivazione");
+    }
+    setProcessing(false);
+  };
+
+  const copiaCredenziali = () => {
+    if (!credenziali) return;
+    const text = `Edil Blu - Credenziali accesso\nEmail: ${credenziali.email}\nPassword temporanea: ${credenziali.tempPassword}\n\nDovrai cambiare la password al primo accesso.`;
+    navigator.clipboard.writeText(text);
+    setCopiato(true);
+    setTimeout(() => setCopiato(false), 2000);
+  };
+
+  const getStatus = (op) => {
+    if (op.authUid) return { label: "Attivo", color: C.green, dim: C.greenDim };
+    if (op.email) return { label: "Da attivare", color: C.gold, dim: C.goldDim };
+    return { label: "Email mancante", color: C.textMuted, dim: `${C.textMuted}20` };
+  };
+
+  if (loading) return <div style={{ textAlign: "center", padding: 40, color: C.textMuted }}>Caricamento...</div>;
+
+  return (
+    <>
+      <SecTitle label={`Operai registrati (${operai.length})`} />
+      {operai.map(op => {
+        const st = getStatus(op);
+        return (
+          <Card key={op.id} style={{ padding: 14, marginBottom: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <Avatar name={`${op.nome || ""} ${op.cognome || ""}`} role={op.ruolo} size={38} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{op.nome} {op.cognome || ""}</div>
+                <div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>{op.ruolo}{op.email ? ` · ${op.email}` : ""}</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ background: st.dim, color: st.color, borderRadius: 999, padding: "3px 10px", fontSize: 10, fontWeight: 600 }}>{st.label}</span>
+                {!op.authUid && (
+                  <button onClick={() => apriModal(op)}
+                    style={{ background: C.accentDim, border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: C.accent, fontSize: 11, fontWeight: 600, fontFamily: "Barlow" }}>
+                    <UserPlus size={14} /> Attiva
+                  </button>
+                )}
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+
+      {operai.filter(o => !o.authUid).length === 0 && (
+        <Empty icon={Shield} msg="Tutti gli operai hanno un accesso attivo" />
+      )}
+
+      {/* Modal attivazione */}
+      {modalOperaio && !credenziali && (
+        <Modal title="Attiva accesso operaio" onClose={chiudiModal}>
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
+              <Avatar name={`${modalOperaio.nome} ${modalOperaio.cognome || ""}`} role={modalOperaio.ruolo} size={44} />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: C.text }}>{modalOperaio.nome} {modalOperaio.cognome || ""}</div>
+                <div style={{ fontSize: 12, color: C.textDim }}>{modalOperaio.ruolo}</div>
+              </div>
+            </div>
+            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: 1, marginBottom: 6, display: "block" }}>EMAIL PER L'ACCESSO</label>
+            <Inp type="email" placeholder="nome@edilblu.it" value={modalEmail} onChange={e => setModalEmail(e.target.value)} />
+          </div>
+          {error && (
+            <div style={{ background: C.redDim, border: `1px solid ${C.red}40`, borderRadius: 8, padding: "10px 14px", color: C.red, fontSize: 13, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+              <AlertCircle size={16} /> {error}
+            </div>
+          )}
+          <Btn label={processing ? "Attivazione in corso..." : "Attiva accesso"} onClick={attivaAccesso} disabled={processing || !modalEmail} icon={UserPlus} />
+        </Modal>
+      )}
+
+      {/* Modal credenziali generate */}
+      {modalOperaio && credenziali && (
+        <Modal title="Credenziali generate" onClose={chiudiModal}>
+          <div style={{ background: C.greenDim, border: `1px solid ${C.green}40`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+              <Check size={18} color={C.green} />
+              <span style={{ fontWeight: 700, color: C.green, fontSize: 14 }}>Accesso attivato</span>
+            </div>
+            <div style={{ fontSize: 12, color: C.textDim }}>per {modalOperaio.nome} {modalOperaio.cognome || ""}</div>
+          </div>
+
+          <div style={{ marginBottom: 12 }}>
+            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: 1 }}>EMAIL</label>
+            <div style={{ fontSize: 14, color: C.text, fontWeight: 600, marginTop: 4 }}>{credenziali.email}</div>
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: 1 }}>PASSWORD TEMPORANEA</label>
+            <div style={{ background: `${C.mid}40`, borderRadius: 10, padding: "12px 14px", marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <code style={{ fontSize: 20, fontWeight: 700, color: C.accent, letterSpacing: 2 }}>{credenziali.tempPassword}</code>
+              <button onClick={copiaCredenziali}
+                style={{ background: "none", border: "none", cursor: "pointer", color: copiato ? C.green : C.textMuted, display: "flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, fontFamily: "Barlow" }}>
+                {copiato ? <><Check size={14} /> Copiato</> : <><Copy size={14} /> Copia</>}
+              </button>
+            </div>
+          </div>
+
+          <div style={{ fontSize: 12, color: C.textDim, lineHeight: 1.6, marginBottom: 20, padding: "10px 12px", background: `${C.mid}20`, borderRadius: 8 }}>
+            Comunica queste credenziali all'operaio. Dovrà cambiare password al primo accesso.
+          </div>
+
+          <Btn label="OK, chiudi" onClick={chiudiModal} variant="secondary" />
+        </Modal>
+      )}
+    </>
+  );
+}
+
+// ─── CAMBIO PASSWORD OBBLIGATORIO ───────────────────────────────────────────
+function CambioPasswordObbligatorio({ user, onDone }) {
+  const { C } = useTheme();
+  const [pw1, setPw1] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [showPw, setShowPw] = useState(false);
+
+  const submit = async () => {
+    setErr("");
+    if (pw1.length < 8) { setErr("Minimo 8 caratteri"); return; }
+    if (pw1 !== pw2) { setErr("Le password non coincidono"); return; }
+    setLoading(true);
+    try {
+      await updatePassword(auth.currentUser, pw1);
+      let docRef = null;
+      const byId = await getDoc(doc(db, "utenti", auth.currentUser.uid));
+      if (byId.exists()) {
+        docRef = doc(db, "utenti", auth.currentUser.uid);
+      } else {
+        const q = await getDocs(query(collection(db, "utenti"), where("authUid", "==", auth.currentUser.uid)));
+        if (!q.empty) docRef = q.docs[0].ref;
+      }
+      if (docRef) {
+        await updateDoc(docRef, { mustChangePassword: false });
+      }
+      onDone();
+    } catch (e) {
+      setErr(e.code === "auth/requires-recent-login" ? "Sessione scaduta, rifai login" : (e.message || "Errore"));
+    }
+    setLoading(false);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, padding: 24, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
+      <img src="/logo-splash.png" alt="Edil Blu" style={{ width: 120, marginBottom: 24 }} />
+      <Card style={{ width: "100%", maxWidth: 360, padding: 24 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 8 }}>Imposta nuova password</h2>
+        <p style={{ fontSize: 13, color: C.textMuted, marginBottom: 20 }}>
+          Per continuare, imposta una password personale (min. 8 caratteri).
+        </p>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: 1, marginBottom: 6, display: "block" }}>NUOVA PASSWORD</label>
+          <div style={{ position: "relative" }}>
+            <Inp type={showPw ? "text" : "password"} value={pw1} onChange={e => setPw1(e.target.value)} placeholder="almeno 8 caratteri" />
+            <button onClick={() => setShowPw(!showPw)} style={{ position: "absolute", right: 10, top: 12, background: "none", border: "none", color: C.textMuted, cursor: "pointer" }}>
+              {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+        </div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: 1, marginBottom: 6, display: "block" }}>CONFERMA PASSWORD</label>
+          <Inp type={showPw ? "text" : "password"} value={pw2} onChange={e => setPw2(e.target.value)} placeholder="ripeti la password" />
+        </div>
+        {err && (
+          <div style={{ background: C.redDim, border: `1px solid ${C.red}40`, borderRadius: 8, padding: "10px 14px", color: C.red, fontSize: 13, marginBottom: 16 }}>
+            {err}
+          </div>
+        )}
+        <Btn label={loading ? "Salvataggio..." : "Imposta password"} onClick={submit} disabled={loading || !pw1 || !pw2} />
+      </Card>
     </div>
   );
 }
@@ -3834,6 +4069,13 @@ export default function App() {
   );
 
   if (!user) return <LoginScreen onLogin={u=>{ setUser(u); setSection(u.ruolo==="operaio"?"personale":"dashboard"); }} />;
+
+  if (user.mustChangePassword) return (
+    <>
+      <style>{globalCss}</style>
+      <CambioPasswordObbligatorio user={user} onDone={() => setUser({...user, mustChangePassword: false})} />
+    </>
+  );
 
   const isOp = user.ruolo === "operaio";
   const navAll = isOp ? [
