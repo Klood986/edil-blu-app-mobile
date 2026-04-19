@@ -2261,11 +2261,15 @@ function CambioPasswordObbligatorio({ user, onDone }) {
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPw, setShowPw] = useState(false);
+  const [success, setSuccess] = useState(false);
+
+  const req1 = pw1.length >= 6;
+  const req2 = pw1 === pw2 && pw2.length > 0;
 
   const submit = async () => {
     setErr("");
-    if (pw1.length < 8) { setErr("Minimo 8 caratteri"); return; }
-    if (pw1 !== pw2) { setErr("Le password non coincidono"); return; }
+    if (!req1) { setErr("La password deve avere almeno 6 caratteri"); return; }
+    if (!req2) { setErr("Le password non coincidono"); return; }
     setLoading(true);
     try {
       await updatePassword(auth.currentUser, pw1);
@@ -2280,9 +2284,15 @@ function CambioPasswordObbligatorio({ user, onDone }) {
       if (docRef) {
         await updateDoc(docRef, { mustChangePassword: false });
       }
-      onDone();
+      setSuccess(true);
+      setTimeout(() => onDone(), 800);
     } catch (e) {
-      setErr(e.code === "auth/requires-recent-login" ? "Sessione scaduta, rifai login" : (e.message || "Errore"));
+      let msg = "Errore. Riprova.";
+      if (e.code === "auth/requires-recent-login") msg = "Sessione scaduta. Fai di nuovo login e riprova.";
+      else if (e.code === "auth/weak-password") msg = "Password troppo debole. Usa almeno 6 caratteri.";
+      else if (e.code === "auth/network-request-failed") msg = "Problema di connessione. Controlla Internet e riprova.";
+      else if (e.message) msg = e.message;
+      setErr(msg);
     }
     setLoading(false);
   };
@@ -2293,12 +2303,12 @@ function CambioPasswordObbligatorio({ user, onDone }) {
       <Card style={{ width: "100%", maxWidth: 360, padding: 24 }}>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: C.text, marginBottom: 8 }}>Imposta nuova password</h2>
         <p style={{ fontSize: 13, color: C.textMuted, marginBottom: 20 }}>
-          Per continuare, imposta una password personale (min. 8 caratteri).
+          Per continuare, imposta una password personale.
         </p>
         <div style={{ marginBottom: 16 }}>
           <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: 1, marginBottom: 6, display: "block" }}>NUOVA PASSWORD</label>
           <div style={{ position: "relative" }}>
-            <Inp type={showPw ? "text" : "password"} value={pw1} onChange={e => setPw1(e.target.value)} placeholder="almeno 8 caratteri" />
+            <Inp type={showPw ? "text" : "password"} value={pw1} onChange={e => setPw1(e.target.value)} placeholder="almeno 6 caratteri" />
             <button onClick={() => setShowPw(!showPw)} style={{ position: "absolute", right: 10, top: 12, background: "none", border: "none", color: C.textMuted, cursor: "pointer" }}>
               {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
@@ -2308,13 +2318,39 @@ function CambioPasswordObbligatorio({ user, onDone }) {
           <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: 1, marginBottom: 6, display: "block" }}>CONFERMA PASSWORD</label>
           <Inp type={showPw ? "text" : "password"} value={pw2} onChange={e => setPw2(e.target.value)} placeholder="ripeti la password" />
         </div>
+
+        {/* Requisiti dinamici */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16, padding: "12px 14px", background: `${C.mid}30`, borderRadius: 10 }}>
+          <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 600, marginBottom: 4 }}>REQUISITI:</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: req1 ? C.green : C.textMuted }}>
+            {req1 ? <Check size={14} /> : <AlertCircle size={14} />}
+            <span>Almeno 6 caratteri ({pw1.length}/6)</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: req2 ? C.green : C.textMuted }}>
+            {req2 ? <Check size={14} /> : <AlertCircle size={14} />}
+            <span>Le password coincidono</span>
+          </div>
+        </div>
+
         {err && (
           <div style={{ background: C.redDim, border: `1px solid ${C.red}40`, borderRadius: 8, padding: "10px 14px", color: C.red, fontSize: 13, marginBottom: 16 }}>
             {err}
           </div>
         )}
-        <Btn label={loading ? "Salvataggio..." : "Imposta password"} onClick={submit} disabled={loading || !pw1 || !pw2} />
+        <Btn label={loading ? "Salvataggio..." : "Imposta password"} onClick={submit} disabled={loading || !req1 || !req2} />
       </Card>
+
+      {/* Overlay successo */}
+      {success && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 9999 }}>
+          <div style={{ background: C.surface, padding: 32, borderRadius: 20, textAlign: "center" }}>
+            <div style={{ width: 60, height: 60, borderRadius: "50%", background: `${C.green}20`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 12px" }}>
+              <Check size={32} color={C.green} />
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>Password aggiornata!</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
