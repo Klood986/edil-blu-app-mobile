@@ -15,7 +15,8 @@ import { Home, HardHat, MessageCircle, User, Menu as MenuIcon,
          Calendar, ClipboardList, Camera, Ruler, FileText, Settings,
          ChevronLeft, X, Plus, ChevronDown, Inbox,
          Plane, Activity, Sun, Moon, LogOut,
-         UserPlus, Copy, Check, AlertCircle, Eye, EyeOff, Shield } from "lucide-react";
+         UserPlus, Copy, Check, AlertCircle, Eye, EyeOff, Shield,
+         ChevronRight } from "lucide-react";
 
 // ─── DESIGN SYSTEM ────────────────────────────────────────────────────────────
 // Palette importata da theme.js — default dark per retrocompatibilità
@@ -1496,17 +1497,37 @@ function CalendarioSettimanale({ user, targetUserId, targetUserNome, canWrite })
 }
 
 // ─── FORM RAPPORTINO (allineato ERP) ─────────────────────────────────────────
-function FormRapportino({ user, onSaved, onClose }) {
+function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
+  const isEdit = !!rapportinoDaModificare;
   const [cantieri, setCantieri] = useState([]);
   const [tasks, setTasks] = useState([]);
-  const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
-  const [noPasto, setNoPasto] = useState(false);
-  const [note, setNote] = useState("");
+  const [date, setDate] = useState(() => {
+    if (rapportinoDaModificare?.date) {
+      const d = rapportinoDaModificare.date;
+      if (d?.toDate) return d.toDate().toISOString().split("T")[0];
+      if (typeof d === "string") return d.split("T")[0];
+      if (d instanceof Date) return d.toISOString().split("T")[0];
+    }
+    return new Date().toISOString().split("T")[0];
+  });
+  const [noPasto, setNoPasto] = useState(rapportinoDaModificare?.noPasto || false);
+  const [note, setNote] = useState(rapportinoDaModificare?.note || "");
   const [saving, setSaving] = useState(false);
-  // blocks: [{projectId, projectName, lavorazioni:[{taskId,taskName,categoria,ore}]}]
-  const [blocks, setBlocks] = useState([{
-    projectId:"", projectName:"", lavorazioni:[{ taskId:"", taskName:"", categoria:"", ore:0 }]
-  }]);
+  const [blocks, setBlocks] = useState(() => {
+    if (rapportinoDaModificare?.blocks?.length) return rapportinoDaModificare.blocks;
+    if (rapportinoDaModificare?.lavorazioni?.length) {
+      // Raggruppa lavorazioni per projectId
+      const grouped = {};
+      rapportinoDaModificare.lavorazioni.forEach(l => {
+        const pid = l.projectId || rapportinoDaModificare.projectId || "";
+        if (!grouped[pid]) grouped[pid] = { projectId: pid, projectName: l.projectName || rapportinoDaModificare.projectName || "", lavorazioni: [] };
+        grouped[pid].lavorazioni.push({ taskId: l.taskId || "", taskName: l.taskName || "", categoria: l.categoria || "", ore: l.ore || 0 });
+      });
+      const result = Object.values(grouped);
+      if (result.length) return result;
+    }
+    return [{ projectId:"", projectName:"", lavorazioni:[{ taskId:"", taskName:"", categoria:"", ore:0 }] }];
+  });
 
   useEffect(() => {
     getDocs(query(collection(db,"projects"),orderBy("name"))).then(s => setCantieri(s.docs.filter(d=>d.data().status==="active"||d.data().status==="draft").map(d=>({id:d.id,...d.data()}))));
@@ -1557,12 +1578,13 @@ function FormRapportino({ user, onSaved, onClose }) {
     const allLavs = blocks.flatMap(b => b.lavorazioni.map(l=>({ ...l, projectId:b.projectId, projectName:b.projectName })));
     const totaleOre = allLavs.reduce((s,l)=>s+Number(l.ore),0);
     const firstBlock = blocks[0];
-    await addDoc(collection(db,"timesheets"), {
+    const data = {
       workerId: user.uid,
       workerName: user.nome + (user.cognome ? " "+user.cognome : ""),
       projectId: firstBlock.projectId,
       projectName: firstBlock.projectName,
       lavorazioni: allLavs,
+      blocks,
       cantieri: blocks.map(b=>({ projectId:b.projectId, projectName:b.projectName })),
       totaleOre,
       hoursWorked: totaleOre,
@@ -1570,16 +1592,19 @@ function FormRapportino({ user, onSaved, onClose }) {
       noPasto,
       note: note.trim(),
       date: new Date(date),
-      status: "submitted",
-      createdAt: serverTimestamp(),
-    });
+    };
+    if (isEdit) {
+      await updateDoc(doc(db, "timesheets", rapportinoDaModificare.id), { ...data, updatedAt: serverTimestamp() });
+    } else {
+      await addDoc(collection(db,"timesheets"), { ...data, status: "draft", createdAt: serverTimestamp() });
+    }
     setSaving(false);
     onSaved();
     onClose();
   };
 
   return (
-    <Modal title="Nuovo Rapportino" onClose={onClose}>
+    <Modal title={isEdit ? "Modifica Rapportino" : "Nuovo Rapportino"} onClose={onClose}>
       {/* Data */}
       <div style={{ fontSize:10, color:C.textMuted, fontWeight:700, marginBottom:4 }}>DATA</div>
       <Inp type="date" value={date} onChange={e=>setDate(e.target.value)} />
@@ -1639,13 +1664,20 @@ function FormRapportino({ user, onSaved, onClose }) {
       {/* Note */}
       <Txta placeholder="Note aggiuntive..." value={note} onChange={e=>setNote(e.target.value)} rows={2} />
 
-      <Btn label={saving?"Salvataggio...":"✓ Invia Rapportino"} onClick={save} disabled={saving||!canSave} />
+      <Btn label={saving ? "Salvataggio..." : isEdit ? "✓ Salva modifiche" : "✓ Invia Rapportino"} onClick={save} disabled={saving||!canSave} />
     </Modal>
   );
 }
 
 // ─── AREA PERSONALE ───────────────────────────────────────────────────────────
-function AreaPersonale({ user }) {
+function getSaluto() {
+  const h = new Date().getHours();
+  return h < 12 ? "Buongiorno" : h < 18 ? "Buon pomeriggio" : "Buonasera";
+}
+
+function AreaPersonale({ user, onSection }) {
+  const { C } = useTheme();
+  const [view, setView] = useState("home");
   const [tab, setTab] = useState("rapportini");
   const [rapportini, setRapportini] = useState([]);
   const [ferie, setFerie] = useState([]);
@@ -1653,11 +1685,29 @@ function AreaPersonale({ user }) {
   const [showRap, setShowRap] = useState(false);
   const [showFerie, setShowFerie] = useState(false);
   const [ferF, setFerF] = useState({ tipo:"Ferie", dal:"", al:"", note:"" });
+  const [cantiereOggi, setCantiereOggi] = useState(null);
+  const [rapportinoOggi, setRapportinoOggi] = useState(null);
+  const [rapportinoEdit, setRapportinoEdit] = useState(null);
 
   useEffect(() => {
     getDocs(query(collection(db,"timesheets"),where("workerId","==",user.uid),orderBy("date","desc"))).then(s=>setRapportini(s.docs.map(d=>({id:d.id,...d.data()}))));
     getDocs(query(collection(db,"richieste_assenza"),where("operaioId","==",user.uid))).then(s=>setFerie(s.docs.map(d=>({id:d.id,...d.data()}))));
     getDocs(query(collection(db,"documenti_operai"),where("operaioId","==",user.uid))).then(s=>setBuste(s.docs.map(d=>({id:d.id,...d.data()}))));
+  }, [user.uid]);
+
+  useEffect(() => {
+    const todayStr = new Date().toISOString().split("T")[0];
+    getDocs(query(collection(db,"assegnazioni_manuali"),where("operaioId","==",user.uid),where("data","==",todayStr)))
+      .then(s => { if (s.docs.length > 0) setCantiereOggi(s.docs[0].data()); }).catch(()=>{});
+    getDocs(query(collection(db,"timesheets"),where("workerId","==",user.uid)))
+      .then(s => {
+        const draft = s.docs.find(d => {
+          const data = d.data();
+          const dDate = data.date?.toDate ? data.date.toDate().toISOString().split("T")[0] : String(data.date||"").split("T")[0];
+          return dDate === todayStr && (!data.status || data.status === "draft");
+        });
+        if (draft) setRapportinoOggi({ id: draft.id, ...draft.data() });
+      }).catch(()=>{});
   }, [user.uid]);
 
   const reload = () => {
@@ -1689,134 +1739,253 @@ function AreaPersonale({ user }) {
   ];
 
   return (
-    <div className="fu">
-      <div style={{ display:"flex", gap:6, padding:"12px 16px", overflowX:"auto", borderBottom:`1px solid ${C.border}` }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={()=>setTab(t.id)}
-            style={{ background:tab===t.id?C.accentDim:"transparent", color:tab===t.id?C.accent:C.textMuted, border:`1px solid ${tab===t.id?C.accent+"50":C.border}`, borderRadius:20, padding:"6px 14px", fontSize:11, fontWeight:700, cursor:"pointer", whiteSpace:"nowrap", fontFamily:"Barlow" }}>
-            {t.l}
-          </button>
-        ))}
+    <div style={{ background: C.bg, minHeight: "100vh", paddingBottom: 90 }} className="fu">
+      {/* HEADER */}
+      <div style={{ padding: "20px 20px 16px", background: C.surface, borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: 0.5 }}>{getSaluto().toUpperCase()}</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: C.text, marginTop: 2 }}>{user.nome} {user.cognome || ""}</div>
+          </div>
+          <Avatar name={`${user.nome} ${user.cognome || ""}`} role={user.ruolo} size={44} />
+        </div>
+        <div style={{ marginTop: 10, display: "flex", gap: 10, alignItems: "center" }}>
+          <RoleBadge role={user.ruolo} />
+          <span style={{ fontSize: 11, color: C.textMuted, textTransform: "capitalize" }}>
+            {new Date().toLocaleDateString("it-IT", { weekday: "long", day: "numeric", month: "long" })}
+          </span>
+        </div>
       </div>
 
-      {tab==="programma" && (
-        <CalendarioSettimanale
-          user={user}
-          targetUserId={user.uid}
-          targetUserNome={null}
-          canWrite={false}
-        />
-      )}
+      {/* ── HOME ── */}
+      {view === "home" && (
+        <div style={{ padding: "16px 16px 24px" }}>
 
-      {tab!=="programma" && (
-        <div style={{ padding:"16px 16px 80px" }}>
-          {tab==="rapportini" && (
+          {/* Banner rapportino aperto oggi */}
+          {rapportinoOggi && (
+            <Card onClick={() => { setRapportinoEdit(rapportinoOggi); setShowRap(true); }}
+              style={{ marginBottom: 14, padding: 14, cursor: "pointer", background: `linear-gradient(135deg, ${C.gold}20, ${C.gold}08)`, border: `1px solid ${C.gold}50` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 44, height: 44, borderRadius: 12, background: `${C.gold}25`, display: "flex", alignItems: "center", justifyContent: "center", animation: "pulse 2s infinite" }}>
+                  <ClipboardList size={22} color={C.gold} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: C.gold, letterSpacing: 0.5 }}>RAPPORTINO APERTO · OGGI</div>
+                  <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginTop: 2 }}>Tocca per continuare</div>
+                </div>
+                <ChevronRight size={18} color={C.gold} />
+              </div>
+            </Card>
+          )}
+
+          {/* Hero cantiere di oggi */}
+          {cantiereOggi && (
+            <Card onClick={() => onSection && onSection("cantieri")}
+              style={{ marginBottom: 16, padding: 18, cursor: "pointer", background: `linear-gradient(135deg, ${C.blue}, ${C.accent})`, border: "none" }}>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.85)", fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>OGGI LAVORI A</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: "#fff" }}>{cantiereOggi.nomeCantiere || "Cantiere assegnato"}</div>
+              {cantiereOggi.indirizzo && <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 6 }}>📍 {cantiereOggi.indirizzo}</div>}
+            </Card>
+          )}
+
+          {/* Grid 6 icone */}
+          <SecTitle label="Azioni principali" />
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
+            {[
+              { icon: ClipboardList, label: "Rapportino", color: C.accent, onClick: () => { setRapportinoEdit(null); setShowRap(true); }, badge: rapportinoOggi ? "APERTO" : null },
+              { icon: HardHat, label: "Cantieri", color: C.bright, onClick: () => onSection && onSection("cantieri") },
+              { icon: FileText, label: "Procedure", color: C.green, onClick: () => onSection && onSection("procedure") },
+              { icon: Plane, label: "Ferie e permessi", color: "#a78bfa", onClick: () => setView("ferie") },
+              { icon: Calendar, label: "Programma", color: C.gold, onClick: () => setView("programma") },
+              { icon: Ruler, label: "Misuratore", color: "#38bdf8", onClick: () => onSection && onSection("misuratore_hub") },
+            ].map(a => {
+              const Icon = a.icon;
+              return (
+                <Card key={a.label} onClick={a.onClick} style={{ padding: "20px 12px", textAlign: "center", cursor: "pointer", position: "relative" }}>
+                  {a.badge && <span style={{ position: "absolute", top: 8, right: 8, background: C.gold, color: "#000", fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 6 }}>{a.badge}</span>}
+                  <div style={{ width: 56, height: 56, borderRadius: 14, background: `${a.color}20`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 10px" }}>
+                    <Icon size={28} color={a.color} strokeWidth={1.8} />
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{a.label}</div>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Ultimi rapportini (max 3) */}
+          {rapportini.length > 0 && (
             <>
-              <Btn label="+ Nuovo Rapportino" onClick={()=>setShowRap(true)} icon="📋" />
-              {rapportini.length===0 && <Empty icon="📋" msg="Nessun rapportino ancora" />}
-              {rapportini.map(r => {
-                const lavs = r.lavorazioni || [];
-                const totOre = r.totaleOre || r.hoursWorked || 0;
-                const col = stCol[r.status] || C.textMuted;
-                const lbl = stLabel[r.status] || r.status;
-                const modificabile = r.status === "submitted" || r.status === "pending";
-                return (
-                  <Card key={r.id}>
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:8 }}>
-                      <div style={{ flex:1 }}>
-                        <div style={{ fontWeight:700, fontSize:15 }}>
-                          {r.date?.toDate ? r.date.toDate().toLocaleDateString("it-IT",{weekday:"short",day:"numeric",month:"short"}) : r.date}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                <SecTitle label="Ultimi rapportini" />
+                <button onClick={() => setView("rapportini")} style={{ background: "none", border: "none", color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Vedi tutti →</button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {rapportini.slice(0, 3).map(r => {
+                  const isDraft = !r.status || r.status === "draft";
+                  const statoCol = r.status === "approved" ? C.green : r.status === "rejected" ? C.red : isDraft ? C.gold : C.accent;
+                  const statoLabel = r.status === "approved" ? "Approvato" : r.status === "rejected" ? "Rifiutato" : isDraft ? "Bozza" : "Inviato";
+                  return (
+                    <Card key={r.id} onClick={() => { if (isDraft) { setRapportinoEdit(r); setShowRap(true); } }} style={{ padding: 12, cursor: isDraft ? "pointer" : "default" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                        <Calendar size={18} color={statoCol} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
+                            {r.date?.toDate ? r.date.toDate().toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" }) : r.date}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>
+                            {r.totaleOre || r.hoursWorked || 0}h · {r.projectName || "Cantiere"}
+                          </div>
                         </div>
-                        <div style={{ fontSize:12, color:C.textDim, marginTop:2 }}>🏗 {r.projectName}</div>
+                        <span style={{ padding: "3px 10px", borderRadius: 999, fontSize: 10, fontWeight: 700, background: `${statoCol}20`, color: statoCol }}>{statoLabel}</span>
                       </div>
-                      <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6 }}>
-                        <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:22, color:C.accent, lineHeight:1 }}>{totOre}h</div>
-                        <span style={{ background:`${col}20`, color:col, border:`1px solid ${col}40`, borderRadius:20, padding:"3px 10px", fontSize:10, fontWeight:700 }}>{lbl}</span>
-                      </div>
-                    </div>
-                    {lavs.length > 0 && (
-                      <div style={{ display:"flex", flexWrap:"wrap", gap:5, marginBottom:8 }}>
-                        {lavs.map((l,i) => (
-                          <span key={i} style={{ background:C.accentDim, color:C.accent, borderRadius:20, padding:"3px 10px", fontSize:11, fontWeight:600 }}>
-                            {l.taskName} · {l.ore}h
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    {r.noPasto && <div style={{ fontSize:11, color:C.red, marginBottom:4 }}>🍽 No pasto</div>}
-                    {r.note && <div style={{ fontSize:12, color:C.textMuted, fontStyle:"italic", marginBottom:8 }}>{r.note}</div>}
-                    {modificabile && (
-                      <div style={{ borderTop:`1px solid ${C.border}`, paddingTop:8, marginTop:4 }}>
-                        <button onClick={async()=>{
-                          if(window.confirm("Eliminare questo rapportino?")) {
-                            const { deleteDoc:dd, doc:d2 } = await import("firebase/firestore");
-                            await dd(d2(db,"timesheets",r.id));
-                            reload();
-                          }
-                        }} style={{ background:"none", border:"none", color:C.textMuted, fontSize:11, cursor:"pointer", fontFamily:"Barlow" }}>
-                          🗑 Elimina
-                        </button>
-                        <span style={{ fontSize:11, color:C.textMuted, marginLeft:8 }}>· Modificabile fino all'approvazione</span>
-                      </div>
-                    )}
-                    {!modificabile && r.status==="approved" && (
-                      <div style={{ fontSize:11, color:C.green, marginTop:4 }}>✓ Approvato — non modificabile</div>
-                    )}
-                  </Card>
-                );
-              })}
-              {showRap && <FormRapportino user={user} onSaved={reload} onClose={()=>setShowRap(false)} />}
-            </>
-          )}
-          {tab==="ferie" && (
-            <>
-              <Btn label="+ Nuova Richiesta" onClick={()=>setShowFerie(true)} icon="✈" />
-              {ferie.length===0 && <Empty icon="✈" msg="Nessuna richiesta ancora" />}
-              {ferie.map(f => (
-                <Card key={f.id}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-                    <div>
-                      <div style={{ fontWeight:700, fontSize:15 }}>{f.tipo}</div>
-                      <div style={{ fontSize:12, color:C.textDim, marginTop:3 }}>{f.dal}{f.al&&f.al!==f.dal?` → ${f.al}`:""}</div>
-                      {f.note && <div style={{ fontSize:11, color:C.textMuted, marginTop:4 }}>{f.note}</div>}
-                    </div>
-                    <span style={{ background:`${fCol[f.stato]||C.textMuted}20`, color:fCol[f.stato]||C.textMuted, border:`1px solid ${fCol[f.stato]||C.textMuted}40`, borderRadius:4, padding:"3px 10px", fontSize:10, fontWeight:700 }}>{f.stato}</span>
-                  </div>
-                </Card>
-              ))}
-              {showFerie && (
-                <Modal title="Nuova Richiesta" onClose={()=>setShowFerie(false)}>
-                  <Sel value={ferF.tipo} onChange={e=>setFerF({...ferF,tipo:e.target.value})}>
-                    {["Ferie","Permesso","Malattia","Permesso sindacale"].map(t=><option key={t}>{t}</option>)}
-                  </Sel>
-                  <Inp placeholder="Dal" type="date" value={ferF.dal} onChange={e=>setFerF({...ferF,dal:e.target.value})} />
-                  <Inp placeholder="Al" type="date" value={ferF.al} onChange={e=>setFerF({...ferF,al:e.target.value})} />
-                  <Txta placeholder="Note (opzionale)" value={ferF.note} onChange={e=>setFerF({...ferF,note:e.target.value})} rows={2} />
-                  <Btn label="✓ Invia Richiesta" onClick={inviaFerie} />
-                </Modal>
-              )}
-            </>
-          )}
-          {tab==="documenti" && (
-            <>
-              {buste.length===0 && <Empty icon="📄" msg="Nessun documento disponibile. L'amministrazione li caricherà qui." />}
-              {buste.map(b => (
-                <Card key={b.id}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                    <div>
-                      <div style={{ fontWeight:700, fontSize:14 }}>{b.tipo==="busta_paga"?"📄":"📋"} {b.nome||b.mese||b.tipo||"Documento"}</div>
-                      <div style={{ fontSize:11, color:C.textDim, marginTop:3 }}>
-                        {b.tipo && <span style={{ background:`${C.accent}20`, color:C.accent, padding:"1px 6px", borderRadius:4, fontSize:10, fontWeight:600, marginRight:6 }}>{b.tipo==="busta_paga"?"Busta paga":b.tipo==="contratto"?"Contratto":b.tipo==="attestato"?"Attestato":b.tipo}</span>}
-                        {b.data && new Date(b.data).toLocaleDateString("it-IT")}
-                      </div>
-                    </div>
-                    {b.url && <a href={b.url} target="_blank" rel="noreferrer"><Btn label="↓ Scarica" small variant="ghost" /></a>}
-                  </div>
-                </Card>
-              ))}
+                    </Card>
+                  );
+                })}
+              </div>
             </>
           )}
         </div>
+      )}
+
+      {/* ── VISTA RAPPORTINI ── */}
+      {view === "rapportini" && (
+        <div style={{ padding: "12px 16px 80px" }}>
+          <button onClick={() => setView("home")} style={{ marginBottom: 12, background: "none", border: "none", color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <ChevronLeft size={16} /> Home
+          </button>
+          <Btn label="+ Nuovo Rapportino" onClick={() => { setRapportinoEdit(null); setShowRap(true); }} icon={ClipboardList} />
+          {rapportini.length === 0 && <Empty icon={ClipboardList} msg="Nessun rapportino ancora" />}
+          {rapportini.map(r => {
+            const lavs = r.lavorazioni || [];
+            const totOre = r.totaleOre || r.hoursWorked || 0;
+            const isDraft = !r.status || r.status === "draft";
+            const col = isDraft ? C.gold : (stCol[r.status] || C.textMuted);
+            const lbl = isDraft ? "Bozza" : (stLabel[r.status] || r.status);
+            const modificabile = isDraft || r.status === "submitted" || r.status === "pending";
+            return (
+              <Card key={r.id} onClick={() => { if (isDraft) { setRapportinoEdit(r); setShowRap(true); } }} style={{ cursor: isDraft ? "pointer" : "default" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>
+                      {r.date?.toDate ? r.date.toDate().toLocaleDateString("it-IT", { weekday: "short", day: "numeric", month: "short" }) : r.date}
+                    </div>
+                    <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>{r.projectName}</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                    <div style={{ fontFamily: "Barlow Condensed", fontWeight: 800, fontSize: 22, color: C.accent, lineHeight: 1 }}>{totOre}h</div>
+                    <span style={{ background: `${col}20`, color: col, border: `1px solid ${col}40`, borderRadius: 20, padding: "3px 10px", fontSize: 10, fontWeight: 700 }}>{lbl}</span>
+                  </div>
+                </div>
+                {lavs.length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginBottom: 8 }}>
+                    {lavs.map((l, i) => (
+                      <span key={i} style={{ background: C.accentDim, color: C.accent, borderRadius: 20, padding: "3px 10px", fontSize: 11, fontWeight: 600 }}>{l.taskName} · {l.ore}h</span>
+                    ))}
+                  </div>
+                )}
+                {r.noPasto && <div style={{ fontSize: 11, color: C.red, marginBottom: 4 }}>No pasto</div>}
+                {r.note && <div style={{ fontSize: 12, color: C.textMuted, fontStyle: "italic", marginBottom: 8 }}>{r.note}</div>}
+                {modificabile && !isDraft && (
+                  <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, marginTop: 4 }}>
+                    <button onClick={async (e) => {
+                      e.stopPropagation();
+                      if (window.confirm("Eliminare questo rapportino?")) {
+                        const { deleteDoc: dd, doc: d2 } = await import("firebase/firestore");
+                        await dd(d2(db, "timesheets", r.id));
+                        reload();
+                      }
+                    }} style={{ background: "none", border: "none", color: C.textMuted, fontSize: 11, cursor: "pointer", fontFamily: "Barlow" }}>
+                      Elimina
+                    </button>
+                  </div>
+                )}
+                {isDraft && (
+                  <div style={{ fontSize: 11, color: C.gold, marginTop: 4 }}>Tocca per modificare</div>
+                )}
+                {!modificabile && r.status === "approved" && (
+                  <div style={{ fontSize: 11, color: C.green, marginTop: 4 }}>Approvato</div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── VISTA FERIE ── */}
+      {view === "ferie" && (
+        <div style={{ padding: "12px 16px 80px" }}>
+          <button onClick={() => setView("home")} style={{ marginBottom: 12, background: "none", border: "none", color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <ChevronLeft size={16} /> Home
+          </button>
+          <Btn label="+ Nuova Richiesta" onClick={() => setShowFerie(true)} icon={Plane} />
+          {ferie.length === 0 && <Empty icon={Plane} msg="Nessuna richiesta ancora" />}
+          {ferie.map(f => (
+            <Card key={f.id}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{f.tipo}</div>
+                  <div style={{ fontSize: 12, color: C.textDim, marginTop: 3 }}>{f.dal}{f.al && f.al !== f.dal ? ` → ${f.al}` : ""}</div>
+                  {f.note && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>{f.note}</div>}
+                </div>
+                <span style={{ background: `${fCol[f.stato] || C.textMuted}20`, color: fCol[f.stato] || C.textMuted, border: `1px solid ${fCol[f.stato] || C.textMuted}40`, borderRadius: 4, padding: "3px 10px", fontSize: 10, fontWeight: 700 }}>{f.stato}</span>
+              </div>
+            </Card>
+          ))}
+          {showFerie && (
+            <Modal title="Nuova Richiesta" onClose={() => setShowFerie(false)}>
+              <Sel value={ferF.tipo} onChange={e => setFerF({ ...ferF, tipo: e.target.value })}>
+                {["Ferie", "Permesso", "Malattia", "Permesso sindacale"].map(t => <option key={t}>{t}</option>)}
+              </Sel>
+              <Inp placeholder="Dal" type="date" value={ferF.dal} onChange={e => setFerF({ ...ferF, dal: e.target.value })} />
+              <Inp placeholder="Al" type="date" value={ferF.al} onChange={e => setFerF({ ...ferF, al: e.target.value })} />
+              <Txta placeholder="Note (opzionale)" value={ferF.note} onChange={e => setFerF({ ...ferF, note: e.target.value })} rows={2} />
+              <Btn label="Invia Richiesta" onClick={inviaFerie} icon={Check} />
+            </Modal>
+          )}
+        </div>
+      )}
+
+      {/* ── VISTA DOCUMENTI ── */}
+      {view === "buste" && (
+        <div style={{ padding: "12px 16px 80px" }}>
+          <button onClick={() => setView("home")} style={{ marginBottom: 12, background: "none", border: "none", color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+            <ChevronLeft size={16} /> Home
+          </button>
+          {buste.length === 0 && <Empty icon={FileText} msg="Nessun documento disponibile. L'amministrazione li caricherà qui." />}
+          {buste.map(b => (
+            <Card key={b.id}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>{b.nome || b.mese || b.tipo || "Documento"}</div>
+                  <div style={{ fontSize: 11, color: C.textDim, marginTop: 3 }}>
+                    {b.tipo && <span style={{ background: `${C.accent}20`, color: C.accent, padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 600, marginRight: 6 }}>{b.tipo === "busta_paga" ? "Busta paga" : b.tipo === "contratto" ? "Contratto" : b.tipo === "attestato" ? "Attestato" : b.tipo}</span>}
+                    {b.data && new Date(b.data).toLocaleDateString("it-IT")}
+                  </div>
+                </div>
+                {b.url && <a href={b.url} target="_blank" rel="noreferrer"><Btn label="Scarica" small variant="ghost" /></a>}
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* ── VISTA PROGRAMMA ── */}
+      {view === "programma" && (
+        <div>
+          <div style={{ padding: "12px 16px 0" }}>
+            <button onClick={() => setView("home")} style={{ marginBottom: 12, background: "none", border: "none", color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <ChevronLeft size={16} /> Home
+            </button>
+          </div>
+          <CalendarioSettimanale user={user} targetUserId={user.uid} targetUserNome={null} canWrite={false} />
+        </div>
+      )}
+
+      {/* Modal rapportino */}
+      {showRap && (
+        <FormRapportino user={user} rapportinoDaModificare={rapportinoEdit}
+          onSaved={() => { reload(); setRapportinoOggi(null); }}
+          onClose={() => { setShowRap(false); setRapportinoEdit(null); }} />
       )}
     </div>
   );
@@ -4187,7 +4356,7 @@ export default function App() {
       {section==="dashboard"      && <Dashboard user={user} stats={stats} onSection={setSection} />}
       {section==="cantieri"       && <Cantieri user={user} />}
       {section==="chat"           && <Chat user={user} />}
-      {section==="personale"      && <AreaPersonale user={user} />}
+      {section==="personale"      && <AreaPersonale user={user} onSection={setSection} />}
       {section==="cronoprogramma" && <Cronoprogramma />}
       {section==="procedure"      && <Procedure user={user} />}
       {section==="regolamento"    && <Regolamento user={user} />}
