@@ -6,7 +6,7 @@ import {
 } from "firebase/auth";
 import { httpsCallable } from "firebase/functions";
 import {
-  collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc,
+  collection, doc, getDoc, getDocs, addDoc, updateDoc, setDoc, deleteDoc,
   query, where, orderBy, onSnapshot, serverTimestamp, arrayUnion,
 } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -1548,7 +1548,10 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
                    || rapportinoDaModificare?.status === "approved"
                    || rapportinoDaModificare?.status === "rejected";
   const [showConfermaInvio, setShowConfermaInvio] = useState(false);
+  const [showConfermaDelete, setShowConfermaDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [noteAperte, setNoteAperte] = useState({});
+  const canDelete = rapportinoDaModificare?.id && (!rapportinoDaModificare.status || rapportinoDaModificare.status === "draft");
   const [cantieri, setCantieri] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [date, setDate] = useState(() => {
@@ -1684,6 +1687,19 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
     setSaving(false);
   };
 
+  const elimina = async () => {
+    if (!rapportinoDaModificare?.id) return;
+    setDeleting(true);
+    try {
+      await deleteDoc(doc(db, "timesheets", rapportinoDaModificare.id));
+      onSaved();
+      onClose();
+    } catch (e) {
+      alert("Errore eliminazione: " + (e.message || "riprova"));
+      setDeleting(false);
+    }
+  };
+
   return (
     <Modal title={readOnly ? `Rapportino ${rapportinoDaModificare.status}` : isEdit ? "Modifica Rapportino" : "Nuovo Rapportino"} onClose={onClose}>
       {readOnly && (
@@ -1788,6 +1804,35 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1.3fr", gap: 10, marginTop: 16 }}>
           <Btn label={saving ? "..." : "Salva bozza"} variant="secondary" onClick={() => save(false)} disabled={saving || !canSave} />
           <Btn label={saving ? "Invio..." : "Invia rapportino →"} onClick={() => setShowConfermaInvio(true)} disabled={saving || !canSave} />
+        </div>
+      )}
+
+      {canDelete && !readOnly && (
+        <button type="button" onClick={() => setShowConfermaDelete(true)} disabled={deleting || saving}
+          style={{ marginTop: 20, width: "100%", padding: "12px", background: "transparent", color: C.red, border: `1px solid ${C.red}40`, borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "Barlow", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, opacity: deleting ? 0.5 : 1, transition: "all 0.15s" }}>
+          <Trash2 size={16} />
+          {deleting ? "Eliminazione..." : "Elimina rapportino"}
+        </button>
+      )}
+
+      {showConfermaDelete && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 600, background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => !deleting && setShowConfermaDelete(false)}>
+          <div onClick={e => e.stopPropagation()} style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 18, padding: 24, maxWidth: 380, width: "100%" }}>
+            <div style={{ width: 54, height: 54, borderRadius: 14, background: `${C.red}20`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+              <Trash2 size={28} color={C.red} />
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: C.text, textAlign: "center", marginBottom: 8 }}>Eliminare il rapportino?</div>
+            <div style={{ fontSize: 13, color: C.textMuted, textAlign: "center", lineHeight: 1.5, marginBottom: 20 }}>
+              Questa operazione <b style={{ color: C.text }}>non può essere annullata</b>. Il rapportino e tutte le ore registrate saranno cancellate.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <Btn label="Annulla" variant="secondary" onClick={() => setShowConfermaDelete(false)} disabled={deleting} />
+              <button onClick={() => { setShowConfermaDelete(false); elimina(); }} disabled={deleting}
+                style={{ padding: "12px", background: C.red, color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "Barlow", opacity: deleting ? 0.5 : 1 }}>
+                {deleting ? "..." : "Sì, elimina"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
