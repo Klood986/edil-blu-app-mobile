@@ -121,10 +121,11 @@ function Btn({ label, onClick, variant="primary", small, icon, disabled }) {
     ghost:     { background:"transparent", color:C.text, border:`1px solid ${C.border}`, boxShadow:"none" },
     danger:    { background:C.red, color:"#fff", border:"none", boxShadow:"none" },
   };
+  const isComponent = icon && (typeof icon === "function" || icon.$$typeof);
   const IconComp = icon;
   return <button onClick={onClick} disabled={disabled}
     style={{ ...v[variant], borderRadius:10, padding:small?"8px 14px":"12px 18px", fontSize:small?13:14, fontWeight:700, cursor:disabled?"default":"pointer", fontFamily:"Barlow,sans-serif", marginBottom:small?0:8, width:small?"auto":"100%", opacity:disabled?.5:1, display:"flex", alignItems:"center", justifyContent:"center", gap:8, transition:"all 0.15s" }}>
-    {icon && (typeof icon === "function" ? <IconComp size={small?14:16} /> : <span style={{ fontSize:small?13:16 }}>{icon}</span>)}{label}
+    {icon && (isComponent ? <IconComp size={small?14:16} /> : <span style={{ fontSize:small?13:16 }}>{icon}</span>)}{label}
   </button>;
 }
 
@@ -162,7 +163,7 @@ function Empty({ icon, msg }) {
   const IconComp = icon || Inbox;
   return (
     <div style={{ textAlign:"center", padding:"40px 20px", color:C.textMuted }}>
-      {typeof IconComp === "function" ? <IconComp size={40} color={C.textMuted} /> : <div style={{ fontSize:40, marginBottom:12 }}>{IconComp}</div>}
+      {(typeof IconComp === "function" || IconComp?.$$typeof) ? <IconComp size={40} color={C.textMuted} /> : <div style={{ fontSize:40, marginBottom:12 }}>{IconComp}</div>}
       <div style={{ fontSize:14, marginTop:12 }}>{msg}</div>
     </div>
   );
