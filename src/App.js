@@ -1414,6 +1414,8 @@ function CalendarioSettimanale({ user, targetUserId, targetUserNome, canWrite })
   const [editVal, setEditVal] = useState("");
   const [saving, setSaving] = useState(false);
   const [notifica, setNotifica] = useState("");
+  const [ferieUtente, setFerieUtente] = useState([]);
+  const [ferieAltriCount, setFerieAltriCount] = useState(0);
 
   const chiaveDoc = (lun) => `${uid}_${lun.toISOString().split("T")[0]}`;
 
@@ -1426,6 +1428,42 @@ function CalendarioSettimanale({ user, targetUserId, targetUserNome, canWrite })
     });
     return unsub;
   }, [settimana, uid]);
+
+  useEffect(() => {
+    if (!uid) return;
+    getDocs(query(collection(db,"richieste_assenza"),
+      where("operaioId","==",uid),
+      where("stato","==","approvata")
+    )).then(s => {
+      setFerieUtente(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    const settiEnd = new Date(settimana);
+    settiEnd.setDate(settiEnd.getDate() + 6);
+    const dalStr = settimana.toISOString().split("T")[0];
+    const alStr = settiEnd.toISOString().split("T")[0];
+    getDocs(query(collection(db,"richieste_assenza"),
+      where("stato","==","approvata")
+    )).then(s => {
+      const altri = s.docs
+        .map(d => d.data())
+        .filter(f => f.operaioId !== uid)
+        .filter(f => {
+          const df = f.dal;
+          const af = f.al || f.dal;
+          return df && df <= alStr && af >= dalStr;
+        });
+      const operaiUnici = new Set(altri.map(f => f.operaioId));
+      setFerieAltriCount(operaiUnici.size);
+    });
+  }, [uid, settimana]);
+
+  const getFeriaDelGiorno = (dateStr) => {
+    return ferieUtente.find(f => {
+      const dal = f.dal;
+      const al = f.al || f.dal;
+      return dal && dateStr >= dal && dateStr <= al;
+    });
+  };
 
   const spostaSettimana = (n) => {
     const nuova = new Date(settimana);
@@ -1502,6 +1540,13 @@ function CalendarioSettimanale({ user, targetUserId, targetUserNome, canWrite })
         )}
       </div>
 
+      {ferieAltriCount > 0 && (
+        <div style={{ background: C.goldDim, border: `1px solid ${C.gold}40`, borderRadius: 8, padding: "8px 12px", margin: "12px 16px 0", fontSize: 12, color: C.gold, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+          <span>{"\u24D8"}</span>
+          <span>{ferieAltriCount} {ferieAltriCount === 1 ? "operaio" : "operai"} in ferie questa settimana</span>
+        </div>
+      )}
+
       {/* Griglia */}
       <div style={{ overflowX:"auto" }}>
         <div style={{ minWidth:520 }}>
@@ -1520,9 +1565,20 @@ function CalendarioSettimanale({ user, targetUserId, targetUserNome, canWrite })
               {GIORNI.map((g,i) => {
                 const k = `${i}_${fascia}`;
                 const val = celle[k]||"";
+                const dGiorno = new Date(settimana);
+                dGiorno.setDate(dGiorno.getDate()+i);
+                const dateStr = dGiorno.toISOString().split("T")[0];
+                const feriaGiorno = getFeriaDelGiorno(dateStr);
                 return (
                   <div key={g} onClick={()=>apriCella(i,fascia)}
-                    style={{ minHeight:44, borderLeft:`1px solid ${C.border}40`, padding:"4px 6px", cursor:canWrite?"pointer":"default", background:isOggi(i)?"rgba(79,172,222,0.04)":"transparent" }}>
+                    style={{ minHeight:44, borderLeft:`1px solid ${C.border}40`, padding:"4px 6px", cursor:canWrite?"pointer":"default", background:isOggi(i)?"rgba(79,172,222,0.04)":"transparent", position:"relative" }}>
+                    {feriaGiorno && (
+                      <div style={{ position:"absolute", top:0, left:0, right:0, bottom:0, background:`${C.red}15`, border:`2px dashed ${C.red}`, borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", zIndex:2, pointerEvents:"none" }}>
+                        <span style={{ fontSize:10, fontWeight:800, color:C.red, letterSpacing:0.5, textTransform:"uppercase", background:C.bg, padding:"2px 8px", borderRadius:4 }}>
+                          {feriaGiorno.tipo === "Malattia" ? "MALAT." : feriaGiorno.tipo === "Permesso" ? "PERM." : "FERIE"}
+                        </span>
+                      </div>
+                    )}
                     {val && (
                       <div style={{ background:`${C.blue}80`, border:`1px solid ${C.accent}40`, borderRadius:4, padding:"3px 6px", fontSize:10, color:C.text, lineHeight:1.4, wordBreak:"break-word" }}>
                         {val}
