@@ -2248,7 +2248,7 @@ function Gestione({ user }) {
   ];
 
   return (
-    <div className="fu">
+    <div className="fu" style={{ height: "100%", overflowY: "auto", paddingBottom: 90, WebkitOverflowScrolling: "touch", overscrollBehavior: "contain" }}>
       {/* Tab bar */}
       <div style={{ display:"flex", gap:6, padding:"12px 16px", overflowX:"auto", borderBottom:`1px solid ${C.border}` }}>
         {tabs.map(t => (
