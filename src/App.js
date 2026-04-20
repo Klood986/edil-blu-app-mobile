@@ -146,7 +146,7 @@ function Modal({ title, onClose, children }) {
   const { C } = useTheme();
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)", zIndex:500, display:"flex", alignItems:"flex-end", justifyContent:"center" }} onClick={onClose}>
-      <div style={{ background:C.card, borderRadius:"18px 18px 0 0", border:`1px solid ${C.border}`, borderBottom:"none", padding:24, width:"100%", maxWidth:500, maxHeight:"88vh", overflowY:"auto", animation:"modalFadeIn 0.2s ease" }} onClick={e => e.stopPropagation()}>
+      <div style={{ background:C.card, borderRadius:"18px 18px 0 0", border:`1px solid ${C.border}`, borderBottom:"none", padding:24, width:"100%", maxWidth:500, maxHeight:"88vh", overflowY:"auto", WebkitOverflowScrolling:"touch", overscrollBehavior:"contain", touchAction:"pan-y", animation:"modalFadeIn 0.2s ease" }} onClick={e => e.stopPropagation()}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
           <div style={{ fontWeight:700, fontSize:18, fontFamily:"Barlow Condensed" }}>{title}</div>
           <button onClick={onClose} style={{ background:"none", border:"none", color:C.textMuted, cursor:"pointer", padding:4, display:"flex" }}><X size={20} /></button>
