@@ -2023,10 +2023,19 @@ function AreaPersonale({ user, onSection }) {
 
   const inviaFerie = async () => {
     if (!ferF.dal) return;
+    const nomeCompleto = [user.nome, user.cognome].filter(Boolean).join(" ").trim() || user.displayName || "";
     const r = await addDoc(collection(db,"richieste_assenza"), {
-      operaioId:user.uid, operaioNome:user.nome||user.displayName||"",
-      tipo:ferF.tipo, dal:ferF.dal, al:ferF.al||ferF.dal, note:ferF.note,
-      stato:"in_attesa", createdAt:serverTimestamp()
+      operaioId: user.uid,
+      operaioNome: nomeCompleto,
+      nomeUtente: nomeCompleto,
+      operaioCognome: user.cognome || "",
+      operaioRuolo: user.ruolo || user.mansione || "",
+      tipo: ferF.tipo,
+      dal: ferF.dal,
+      al: ferF.al || ferF.dal,
+      note: ferF.note,
+      stato: "in_attesa",
+      createdAt: serverTimestamp()
     });
     setFerie([...ferie,{id:r.id,tipo:ferF.tipo,dal:ferF.dal,al:ferF.al||ferF.dal,note:ferF.note,stato:"in_attesa"}]);
     setShowFerie(false);
@@ -2310,6 +2319,8 @@ function Gestione({ user }) {
   const [bustaForm, setBustaForm] = useState({ mese:"", netto:"" });
   const [uploading, setUploading] = useState(false);
   const [filterUtente, setFilterUtente] = useState("tutti");
+  const [maxFerieContemporanee, setMaxFerieContemporanee] = useState(2);
+  const [ferieApprovate, setFerieApprovate] = useState([]);
   const fileRef = useRef();
 
   useEffect(() => {
@@ -2318,12 +2329,33 @@ function Gestione({ user }) {
     getDocs(collection(db,"utenti")).then(s=>setUtenti(s.docs.map(d=>({id:d.id,...d.data()}))));
     getDocs(collection(db,"rapportini")).then(s=>setRapportini(s.docs.map(d=>({id:d.id,...d.data()}))));
     getDocs(collection(db,"programma")).then(s=>setProgrammi(s.docs.map(d=>({id:d.id,...d.data()}))));
+    getDoc(doc(db,"settings","ferie")).then(s => {
+      if (s.exists() && typeof s.data().maxContemporanee === "number") {
+        setMaxFerieContemporanee(s.data().maxContemporanee);
+      }
+    }).catch(() => {});
+    getDocs(query(collection(db,"richieste_assenza"),where("stato","==","approvata"))).then(s => {
+      setFerieApprovate(s.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
   }, []);
 
   const approvaFeria = async (id, stato) => {
     await updateDoc(doc(db,"richieste_assenza",id),{stato});
     setFerie(ferie.filter(f=>f.id!==id));
     setTutteFerie(tutteFerie.map(f=>f.id===id?{...f,stato}:f));
+  };
+
+  const calcolaSovrapposizioni = (richiesta) => {
+    const dalReq = richiesta.dal;
+    const alReq = richiesta.al || richiesta.dal;
+    if (!dalReq) return [];
+    return ferieApprovate.filter(f => {
+      if (f.operaioId === richiesta.operaioId) return false;
+      const dalF = f.dal;
+      const alF = f.al || f.dal;
+      if (!dalF) return false;
+      return dalF <= alReq && alF >= dalReq;
+    });
   };
 
   const uploadBusta = async (e) => {
@@ -2386,21 +2418,57 @@ function Gestione({ user }) {
             {/* In attesa */}
             <SecTitle label={`Da approvare (${ferie.length})`} />
             {ferie.length===0 && <Empty icon="✈" msg="Nessuna richiesta in attesa" />}
-            {ferie.map(f=>(
-              <Card key={f.id} style={{ borderLeft:`3px solid ${C.gold}` }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <div>
-                    <div style={{ fontWeight:700, fontSize:14 }}>{f.nomeUtente}</div>
-                    <div style={{ fontSize:13, color:C.textDim, marginTop:2 }}>{f.tipo} — {f.dal}{f.al&&f.al!==f.dal?` → ${f.al}`:""}</div>
-                    {f.note&&<div style={{ fontSize:11, color:C.textMuted, marginTop:4 }}>{f.note}</div>}
+            {ferie.map(f => {
+              const sovrapposti = calcolaSovrapposizioni(f);
+              const nomiSovrapposti = sovrapposti.map(s => s.nomeUtente || s.operaioNome).filter(Boolean).join(", ");
+              const numSovrapposti = sovrapposti.length;
+              const sforaLimite = numSovrapposti >= maxFerieContemporanee;
+              const bannerBg = sforaLimite ? C.redDim : numSovrapposti > 0 ? C.goldDim : C.greenDim;
+              const bannerColor = sforaLimite ? C.red : numSovrapposti > 0 ? C.gold : C.green;
+              const bannerMsg = sforaLimite
+                ? `Limite raggiunto: gia ${numSovrapposti} in ferie (max ${maxFerieContemporanee})${nomiSovrapposti ? ": " + nomiSovrapposti : ""}`
+                : numSovrapposti > 0
+                  ? `${numSovrapposti} operaio gia in ferie${nomiSovrapposti ? ": " + nomiSovrapposti : ""}`
+                  : "Nessuno in ferie in questi giorni";
+              const utenteObj = utenti.find(u => u.id === f.operaioId);
+              const displayNome = f.nomeUtente || f.operaioNome || (utenteObj ? `${utenteObj.nome || ""} ${utenteObj.cognome || ""}`.trim() : "Operaio");
+              const displayRuolo = f.operaioRuolo || utenteObj?.ruolo || "";
+              return (
+                <Card key={f.id} style={{ borderLeft: `3px solid ${C.gold}`, marginBottom: 12 }}>
+                  <div style={{ display: "flex", gap: 12, alignItems: "flex-start", marginBottom: 10 }}>
+                    {utenteObj && <Avatar name={displayNome} role={displayRuolo} size={40} />}
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: C.text }}>{displayNome}</div>
+                      {displayRuolo && (
+                        <div style={{ fontSize: 11, color: C.textMuted, marginTop: 1 }}>{displayRuolo}</div>
+                      )}
+                      <div style={{ fontSize: 13, color: C.textDim, marginTop: 6 }}>
+                        <strong>{f.tipo}</strong> · {f.dal}{f.al && f.al !== f.dal ? ` \u2192 ${f.al}` : ""}
+                      </div>
+                      {f.note && (
+                        <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4, fontStyle: "italic" }}>"{f.note}"</div>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ display:"flex", gap:6 }}>
-                    <button onClick={()=>approvaFeria(f.id,"approvata")} style={{ background:C.greenDim, color:C.green, border:`1px solid ${C.green}40`, borderRadius:8, padding:"8px 14px", fontSize:13, fontWeight:800, cursor:"pointer" }}>✓</button>
-                    <button onClick={()=>approvaFeria(f.id,"rifiutata")} style={{ background:C.redDim, color:C.red, border:`1px solid ${C.red}40`, borderRadius:8, padding:"8px 14px", fontSize:13, fontWeight:800, cursor:"pointer" }}>✕</button>
+
+                  <div style={{ background: bannerBg, border: `1px solid ${bannerColor}40`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: bannerColor, fontWeight: 600, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span>{sforaLimite ? "\u26A0" : numSovrapposti > 0 ? "\u24D8" : "\u2713"}</span>
+                    <span>{bannerMsg}</span>
                   </div>
-                </div>
-              </Card>
-            ))}
+
+                  <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+                    <button onClick={() => approvaFeria(f.id, "rifiutata")}
+                      style={{ background: C.redDim, color: C.red, border: `1px solid ${C.red}40`, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                      ✕ Rifiuta
+                    </button>
+                    <button onClick={() => approvaFeria(f.id, "approvata")}
+                      style={{ background: C.greenDim, color: C.green, border: `1px solid ${C.green}40`, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                      ✓ Approva
+                    </button>
+                  </div>
+                </Card>
+              );
+            })}
 
             {/* Storico */}
             <SecTitle label="Storico tutte le richieste" />
