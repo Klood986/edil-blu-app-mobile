@@ -16,7 +16,7 @@ import { Home, HardHat, MessageCircle, User, Menu as MenuIcon,
          ChevronLeft, X, Plus, ChevronDown, Inbox,
          Plane, Activity, Sun, Moon, LogOut,
          UserPlus, Copy, Check, AlertCircle, Eye, EyeOff, Shield,
-         ChevronRight, GripVertical, Trash2, Save } from "lucide-react";
+         ChevronRight, GripVertical, Trash2, Save, RefreshCw } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -146,12 +146,12 @@ function Modal({ title, onClose, children }) {
   const { C } = useTheme();
   return (
     <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)", zIndex:500, display:"flex", alignItems:"flex-end", justifyContent:"center", overflow:"hidden" }} onClick={onClose}>
-      <div style={{ background:C.card, borderRadius:"18px 18px 0 0", border:`1px solid ${C.border}`, borderBottom:"none", padding:24, width:"100%", maxWidth:500, maxHeight:"85vh", display:"flex", flexDirection:"column", animation:"modalFadeIn 0.2s ease" }} onClick={e => e.stopPropagation()}>
+      <div style={{ background:C.card, borderRadius:"18px 18px 0 0", border:`1px solid ${C.border}`, borderBottom:"none", padding:"20px 20px 24px", width:"100%", maxWidth:500, maxHeight:"90vh", display:"flex", flexDirection:"column", animation:"modalFadeIn 0.2s ease" }} onClick={e => e.stopPropagation()}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexShrink:0 }}>
           <div style={{ fontWeight:700, fontSize:18, fontFamily:"Barlow Condensed" }}>{title}</div>
           <button onClick={onClose} style={{ background:"none", border:"none", color:C.textMuted, cursor:"pointer", padding:4, display:"flex" }}><X size={20} /></button>
         </div>
-        <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", overscrollBehavior:"contain", marginRight:-24, paddingRight:24 }}>
+        <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", overscrollBehavior:"contain", minHeight:0 }}>
           {children}
         </div>
       </div>
@@ -2462,6 +2462,7 @@ function GestioneAccessi() {
   const [error, setError] = useState("");
   const [credenziali, setCredenziali] = useState(null);
   const [copiato, setCopiato] = useState(false);
+  const [isReset, setIsReset] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -2482,10 +2483,19 @@ function GestioneAccessi() {
     setCredenziali(null);
   };
 
+  const apriModalReset = (operaio) => {
+    setModalOperaio(operaio);
+    setModalEmail(operaio.email || "");
+    setError("");
+    setCredenziali(null);
+    setIsReset(true);
+  };
+
   const chiudiModal = () => {
     setModalOperaio(null);
     setCredenziali(null);
     setError("");
+    setIsReset(false);
   };
 
   const attivaAccesso = async () => {
@@ -2502,6 +2512,24 @@ function GestioneAccessi() {
       setCredenziali(result.data);
     } catch (e) {
       setError(e.message || "Errore durante l'attivazione");
+    }
+    setProcessing(false);
+  };
+
+  const resetAccesso = async () => {
+    if (!modalOperaio) return;
+    setProcessing(true);
+    setError("");
+    try {
+      const resetFn = httpsCallable(functions, "resetWorkerPassword");
+      const result = await resetFn({ userId: modalOperaio.id });
+      setCredenziali({
+        email: result.data.email,
+        tempPassword: result.data.password
+      });
+    } catch (e) {
+      console.error(e);
+      setError(e.message || "Errore durante il reset");
     }
     setProcessing(false);
   };
@@ -2543,6 +2571,12 @@ function GestioneAccessi() {
                     <UserPlus size={14} /> Attiva
                   </button>
                 )}
+                {op.authUid && (
+                  <button onClick={() => apriModalReset(op)}
+                    style={{ background: C.goldDim || "#78350f20", border: "none", borderRadius: 8, padding: "6px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, color: C.gold || "#f59e0b", fontSize: 11, fontWeight: 600, fontFamily: "Barlow" }}>
+                    <RefreshCw size={14} /> Rigenera
+                  </button>
+                )}
               </div>
             </div>
           </Card>
@@ -2555,7 +2589,7 @@ function GestioneAccessi() {
 
       {/* Modal attivazione */}
       {modalOperaio && !credenziali && (
-        <Modal title="Attiva accesso operaio" onClose={chiudiModal}>
+        <Modal title={isReset ? "Rigenera password" : "Attiva accesso operaio"} onClose={chiudiModal}>
           <div style={{ marginBottom: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
               <Avatar name={`${modalOperaio.nome} ${modalOperaio.cognome || ""}`} role={modalOperaio.ruolo} size={44} />
@@ -2564,6 +2598,11 @@ function GestioneAccessi() {
                 <div style={{ fontSize: 12, color: C.textDim }}>{modalOperaio.ruolo}</div>
               </div>
             </div>
+            {isReset && (
+              <div style={{ padding: 12, background: C.goldDim || "#78350f20", border: `1px solid ${C.gold || "#f59e0b"}40`, borderRadius: 8, marginBottom: 16, fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+                <strong>Attenzione:</strong> rigenerando la password, quella attuale non sarà più valida. L'operaio dovrà cambiarla al prossimo accesso.
+              </div>
+            )}
             <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: 1, marginBottom: 6, display: "block" }}>EMAIL PER L'ACCESSO</label>
             <Inp type="email" placeholder="nome@edilblu.it" value={modalEmail} onChange={e => setModalEmail(e.target.value)} />
           </div>
@@ -2572,17 +2611,17 @@ function GestioneAccessi() {
               <AlertCircle size={16} /> {error}
             </div>
           )}
-          <Btn label={processing ? "Attivazione in corso..." : "Attiva accesso"} onClick={attivaAccesso} disabled={processing || !modalEmail} icon={UserPlus} />
+          <Btn label={processing ? (isReset ? "Reset in corso..." : "Attivazione in corso...") : (isReset ? "Conferma reset" : "Attiva accesso")} onClick={isReset ? resetAccesso : attivaAccesso} disabled={processing || !modalEmail} icon={isReset ? RefreshCw : UserPlus} />
         </Modal>
       )}
 
       {/* Modal credenziali generate */}
       {modalOperaio && credenziali && (
-        <Modal title="Credenziali generate" onClose={chiudiModal}>
+        <Modal title={isReset ? "Nuova password generata" : "Credenziali generate"} onClose={chiudiModal}>
           <div style={{ background: C.greenDim, border: `1px solid ${C.green}40`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
               <Check size={18} color={C.green} />
-              <span style={{ fontWeight: 700, color: C.green, fontSize: 14 }}>Accesso attivato</span>
+              <span style={{ fontWeight: 700, color: C.green, fontSize: 14 }}>{isReset ? "Password rigenerata" : "Accesso attivato"}</span>
             </div>
             <div style={{ fontSize: 12, color: C.textDim }}>per {modalOperaio.nome} {modalOperaio.cognome || ""}</div>
           </div>
@@ -2593,7 +2632,7 @@ function GestioneAccessi() {
           </div>
 
           <div style={{ marginBottom: 16 }}>
-            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: 1 }}>PASSWORD TEMPORANEA</label>
+            <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 600, letterSpacing: 1 }}>{isReset ? "NUOVA PASSWORD" : "PASSWORD TEMPORANEA"}</label>
             <div style={{ background: `${C.mid}40`, borderRadius: 10, padding: "12px 14px", marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <code style={{ fontSize: 20, fontWeight: 700, color: C.accent, letterSpacing: 2 }}>{credenziali.tempPassword}</code>
               <button onClick={copiaCredenziali}
