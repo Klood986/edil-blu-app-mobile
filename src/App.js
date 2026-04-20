@@ -315,9 +315,19 @@ function Dashboard({ user, stats, onSection }) {
     // Incarichi miei aperti
     getDocs(query(collection(db,"incarichi"),where("assegnatoA","==",user.uid)))
       .then(s => setIncarichi(s.docs.map(d=>d.data()).filter(i=>i.stato!=="completato"&&i.stato!=="confermato"))).catch(()=>{});
-    // Ultimi rapportini
-    getDocs(query(collection(db,"timesheets"),where("workerId","==",user.uid),orderBy("date","desc")))
-      .then(s => setUltimiRap(s.docs.slice(0,5).map(d=>({id:d.id,...d.data()})))).catch(()=>{});
+    // Ultimi rapportini (real-time)
+    const unsubUltimiRap = onSnapshot(query(collection(db,"timesheets"),where("workerId","==",user.uid),orderBy("date","desc")), s => {
+      setUltimiRap(s.docs.slice(0,5).map(d=>({id:d.id,...d.data()})));
+    });
+    // Reload al ritorno in foreground
+    const handleVisibility = () => {
+      if (!document.hidden) {
+        getDocs(query(collection(db,"incarichi"),where("assegnatoA","==",user.uid)))
+          .then(s => setIncarichi(s.docs.map(d=>d.data()).filter(i=>i.stato!=="completato"&&i.stato!=="confermato"))).catch(()=>{});
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => { unsubUltimiRap(); document.removeEventListener("visibilitychange", handleVisibility); };
   }, [user.ruolo, user.uid]);
 
   // Azioni rapide per operaio
@@ -1984,28 +1994,30 @@ function AreaPersonale({ user, onSection }) {
   const [rapportinoEdit, setRapportinoEdit] = useState(null);
 
   useEffect(() => {
-    getDocs(query(collection(db,"timesheets"),where("workerId","==",user.uid),orderBy("date","desc"))).then(s=>setRapportini(s.docs.map(d=>({id:d.id,...d.data()}))));
+    const unsubRap = onSnapshot(query(collection(db,"timesheets"),where("workerId","==",user.uid),orderBy("date","desc")), s => {
+      setRapportini(s.docs.map(d=>({id:d.id,...d.data()})));
+    });
     getDocs(query(collection(db,"richieste_assenza"),where("operaioId","==",user.uid))).then(s=>setFerie(s.docs.map(d=>({id:d.id,...d.data()}))));
     getDocs(query(collection(db,"documenti_operai"),where("operaioId","==",user.uid))).then(s=>setBuste(s.docs.map(d=>({id:d.id,...d.data()}))));
+    return () => unsubRap();
   }, [user.uid]);
 
   useEffect(() => {
     const todayStr = new Date().toISOString().split("T")[0];
     getDocs(query(collection(db,"assegnazioni_manuali"),where("operaioId","==",user.uid),where("data","==",todayStr)))
       .then(s => { if (s.docs.length > 0) setCantiereOggi(s.docs[0].data()); }).catch(()=>{});
-    getDocs(query(collection(db,"timesheets"),where("workerId","==",user.uid)))
-      .then(s => {
-        const draft = s.docs.find(d => {
-          const data = d.data();
-          const dDate = data.date?.toDate ? data.date.toDate().toISOString().split("T")[0] : String(data.date||"").split("T")[0];
-          return dDate === todayStr && (!data.status || data.status === "draft");
-        });
-        if (draft) setRapportinoOggi({ id: draft.id, ...draft.data() });
-      }).catch(()=>{});
+    const unsubToday = onSnapshot(query(collection(db,"timesheets"),where("workerId","==",user.uid)), s => {
+      const draft = s.docs.find(d => {
+        const data = d.data();
+        const dDate = data.date?.toDate ? data.date.toDate().toISOString().split("T")[0] : String(data.date||"").split("T")[0];
+        return dDate === todayStr && (!data.status || data.status === "draft");
+      });
+      setRapportinoOggi(draft ? { id: draft.id, ...draft.data() } : null);
+    });
+    return () => unsubToday();
   }, [user.uid]);
 
   const reload = () => {
-    getDocs(query(collection(db,"timesheets"),where("workerId","==",user.uid),orderBy("date","desc"))).then(s=>setRapportini(s.docs.map(d=>({id:d.id,...d.data()}))));
     getDocs(query(collection(db,"richieste_assenza"),where("operaioId","==",user.uid))).then(s=>setFerie(s.docs.map(d=>({id:d.id,...d.data()}))));
   };
 
