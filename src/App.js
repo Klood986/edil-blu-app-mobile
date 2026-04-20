@@ -1703,8 +1703,8 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
       // Raggruppa lavorazioni per projectId
       const grouped = {};
       rapportinoDaModificare.lavorazioni.forEach(l => {
-        const pid = l.projectId || rapportinoDaModificare.projectId || "";
-        if (!grouped[pid]) grouped[pid] = { projectId: pid, projectName: l.projectName || rapportinoDaModificare.projectName || "", lavorazioni: [] };
+        const pid = rapportinoDaModificare.projectId || l.projectId || "";
+        if (!grouped[pid]) grouped[pid] = { projectId: pid, projectName: rapportinoDaModificare.projectName || l.projectName || "", lavorazioni: [] };
         grouped[pid].lavorazioni.push({ taskId: l.taskId || "", taskName: l.taskName || "", categoria: l.categoria || "", ore: l.ore || 0, nota: l.nota || "" });
       });
       const result = Object.values(grouped);
