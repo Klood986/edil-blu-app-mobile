@@ -146,12 +146,12 @@ function Modal({ title, onClose, children }) {
   const { C } = useTheme();
   return (
     <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.6)", backdropFilter:"blur(4px)", zIndex:500, display:"flex", alignItems:"flex-end", justifyContent:"center", overflow:"hidden" }} onClick={onClose}>
-      <div style={{ background:C.card, borderRadius:"18px 18px 0 0", border:`1px solid ${C.border}`, borderBottom:"none", padding:"20px 20px 24px", width:"100%", maxWidth:500, maxHeight:"90vh", display:"flex", flexDirection:"column", animation:"modalFadeIn 0.2s ease" }} onClick={e => e.stopPropagation()}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16, flexShrink:0 }}>
+      <div style={{ background:C.card, borderRadius:"18px 18px 0 0", border:`1px solid ${C.border}`, borderBottom:"none", width:"100%", maxWidth:500, height:"90vh", maxHeight:"90vh", display:"flex", flexDirection:"column", animation:"modalFadeIn 0.2s ease" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"20px 20px 16px", flexShrink:0, borderBottom:`1px solid ${C.border}` }}>
           <div style={{ fontWeight:700, fontSize:18, fontFamily:"Barlow Condensed" }}>{title}</div>
           <button onClick={onClose} style={{ background:"none", border:"none", color:C.textMuted, cursor:"pointer", padding:4, display:"flex" }}><X size={20} /></button>
         </div>
-        <div style={{ flex:1, overflowY:"auto", WebkitOverflowScrolling:"touch", overscrollBehavior:"contain", minHeight:0 }}>
+        <div style={{ flex:"1 1 auto", overflowY:"auto", WebkitOverflowScrolling:"touch", overscrollBehavior:"contain", minHeight:0, padding:"16px 20px 24px" }}>
           {children}
         </div>
       </div>
