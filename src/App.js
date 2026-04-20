@@ -16,7 +16,7 @@ import { Home, HardHat, MessageCircle, User, Menu as MenuIcon,
          ChevronLeft, X, Plus, ChevronDown, Inbox,
          Plane, Activity, Sun, Moon, LogOut,
          UserPlus, Copy, Check, AlertCircle, Eye, EyeOff, Shield,
-         ChevronRight, GripVertical, Trash2, Save, RefreshCw } from "lucide-react";
+         ChevronRight, GripVertical, Trash2, Save, RefreshCw, Search } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -1543,6 +1543,125 @@ function CalendarioSettimanale({ user, targetUserId, targetUserNome, canWrite })
   );
 }
 
+// ─── DROPDOWN LAVORAZIONI CON RICERCA ────────────────────────────────────────
+function LavorazioneSelect({ value, onChange, gruppiTask, categorie, tasks }) {
+  const { C } = useTheme();
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const dropdownRef = useRef(null);
+  const inputRef = useRef(null);
+
+  const allTasks = tasks || [];
+  const selectedTask = allTasks.find(t => t.id === value);
+  const displayLabel = selectedTask ? (selectedTask.nome || selectedTask.name) : "";
+
+  useEffect(() => {
+    if (!open) return;
+    const handleClick = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setOpen(false);
+        setSearch("");
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("touchstart", handleClick);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("touchstart", handleClick);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (open && inputRef.current) {
+      setTimeout(() => inputRef.current && inputRef.current.focus(), 50);
+    }
+  }, [open]);
+
+  const searchLower = search.trim().toLowerCase();
+  const filterFn = (t) => !searchLower || (t.nome || t.name || "").toLowerCase().includes(searchLower);
+
+  const selezionaTask = (taskId) => {
+    onChange(taskId);
+    setOpen(false);
+    setSearch("");
+  };
+
+  const renderGruppo = (label, items, colore) => {
+    if (!items || items.length === 0) return null;
+    return (
+      <div key={label}>
+        <div style={{ padding: "8px 14px 4px", fontSize: 10, fontWeight: 700, color: colore, textTransform: "uppercase", letterSpacing: 0.6, background: C.bg, position: "sticky", top: 0, zIndex: 1 }}>
+          {label}
+        </div>
+        {items.map(t => (
+          <div key={t.id} onClick={() => selezionaTask(t.id)}
+            style={{ padding: "10px 14px", fontSize: 13, color: C.text, cursor: "pointer", borderBottom: `1px solid ${C.border}30`, background: value === t.id ? C.accentDim : "transparent" }}>
+            {t.nome || t.name}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  // Build filtered groups
+  let groups = [];
+  if (gruppiTask) {
+    const consFiltered = gruppiTask.prioList.filter(filterFn);
+    const stessaFiltered = gruppiTask.stessaCat.filter(filterFn);
+    const altreFiltered = gruppiTask.altre.filter(filterFn);
+    groups = [
+      { label: "\u2B50 Consigliate per te", items: consFiltered, color: C.accent },
+      { label: "Stessa categoria", items: stessaFiltered, color: C.gold || "#f59e0b" },
+      { label: "Altre", items: altreFiltered, color: C.textMuted },
+    ];
+  } else if (categorie) {
+    groups = categorie.map(cat => ({
+      label: cat,
+      items: allTasks.filter(t => t.categoria === cat).filter(filterFn),
+      color: C.textMuted,
+    }));
+  }
+  const totalFiltered = groups.reduce((sum, g) => sum + (g.items ? g.items.length : 0), 0);
+
+  return (
+    <div ref={dropdownRef} style={{ position: "relative", width: "100%" }}>
+      <div onClick={() => setOpen(!open)}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: C.surface, border: `1px solid ${open ? C.accent : C.border}`, borderRadius: 8, cursor: "pointer", fontSize: 14, color: displayLabel ? C.text : C.textMuted, minHeight: 40 }}>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+          {displayLabel || "Seleziona lavorazione..."}
+        </span>
+        <span style={{ color: C.textMuted, marginLeft: 8, transition: "transform 0.15s", transform: open ? "rotate(180deg)" : "rotate(0)" }}>{"\u25BE"}</span>
+      </div>
+
+      {open && (
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", zIndex: 100, maxHeight: 320, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ padding: 10, borderBottom: `1px solid ${C.border}`, flexShrink: 0, background: C.surface }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 10px" }}>
+              <Search size={14} color={C.textMuted} />
+              <input ref={inputRef} type="text" value={search} onChange={(e) => setSearch(e.target.value)}
+                placeholder="Cerca lavorazione..."
+                style={{ flex: 1, border: "none", background: "transparent", outline: "none", color: C.text, fontSize: 14, fontFamily: "inherit" }} />
+              {search && (
+                <span onClick={() => setSearch("")} style={{ cursor: "pointer", color: C.textMuted, fontSize: 16, lineHeight: 1, padding: "0 4px" }}>{"\u2715"}</span>
+              )}
+            </div>
+          </div>
+
+          <div style={{ flex: 1, overflowY: "auto", WebkitOverflowScrolling: "touch", overscrollBehavior: "contain", minHeight: 0 }}>
+            {searchLower && totalFiltered === 0 ? (
+              <div style={{ padding: 20, textAlign: "center", color: C.textMuted, fontSize: 13 }}>
+                Nessuna lavorazione trovata
+              </div>
+            ) : (
+              groups.map(g => renderGruppo(g.label, g.items, g.color))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── FORM RAPPORTINO (allineato ERP) ─────────────────────────────────────────
 function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
   const isEdit = !!rapportinoDaModificare;
@@ -1736,28 +1855,13 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
                 <div key={li} style={{ marginBottom:10 }}>
                   <div style={{ display:"flex", gap:6, alignItems:"center" }}>
                     <div style={{ flex:1 }}>
-                      <Sel value={l.taskId} onChange={e=>updLav(bi,li,"taskId",e.target.value)}>
-                        <option value="">Seleziona lavorazione...</option>
-                        {gruppiTask ? (<>
-                          <optgroup label="⭐ Consigliate per te">
-                            {gruppiTask.prioList.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
-                          </optgroup>
-                          {gruppiTask.stessaCat.length > 0 && (
-                            <optgroup label="Stessa categoria">
-                              {gruppiTask.stessaCat.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
-                            </optgroup>
-                          )}
-                          <optgroup label="Altre">
-                            {gruppiTask.altre.map(t => <option key={t.id} value={t.id}>{t.nome || t.name}</option>)}
-                          </optgroup>
-                        </>) : categorie.map(cat => (
-                          <optgroup key={cat} label={cat}>
-                            {tasks.filter(t=>t.categoria===cat).map(t=>(
-                              <option key={t.id} value={t.id}>{t.nome}</option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </Sel>
+                      <LavorazioneSelect
+                        value={l.taskId}
+                        onChange={(taskId) => updLav(bi, li, "taskId", taskId)}
+                        gruppiTask={gruppiTask}
+                        categorie={categorie}
+                        tasks={tasks}
+                      />
                     </div>
                     <Inp type="number" placeholder="ore" value={l.ore||""} onChange={e=>updLav(bi,li,"ore",Number(e.target.value))} style={{ width:70, marginBottom:0 }} />
                     {b.lavorazioni.length>1 && (
