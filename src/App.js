@@ -1766,7 +1766,7 @@ function LavorazioneSelect({ value, onChange, gruppiTask, categorie, tasks }) {
   const totalFiltered = groups.reduce((sum, g) => sum + (g.items ? g.items.length : 0), 0);
 
   return (
-    <div ref={dropdownRef} style={{ position: "relative", width: "100%" }}>
+    <div ref={dropdownRef} style={{ position: "relative", width: "100%", overflow: "visible" }}>
       <div onClick={() => setOpen(!open)}
         style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: C.surface, border: `1px solid ${open ? C.accent : C.border}`, borderRadius: 8, cursor: "pointer", fontSize: 14, color: displayLabel ? C.text : C.textMuted, minHeight: 40 }}>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
@@ -1776,7 +1776,7 @@ function LavorazioneSelect({ value, onChange, gruppiTask, categorie, tasks }) {
       </div>
 
       {open && (
-        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 8px 24px rgba(0,0,0,0.3)", zIndex: 100, maxHeight: 320, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 12px 32px rgba(0,0,0,0.5)", zIndex: 9999, maxHeight: "min(320px, 50vh)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ padding: 10, borderBottom: `1px solid ${C.border}`, flexShrink: 0, background: C.surface }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 10px" }}>
               <Search size={14} color={C.textMuted} />
