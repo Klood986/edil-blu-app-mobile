@@ -2022,7 +2022,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
             <div style={{ fontSize:10, color:C.textMuted, fontWeight:700, marginBottom:6 }}>CANTIERE {blocks.length>1?bi+1:""}</div>
             <Sel value={b.projectId} onChange={e=>updBlock(bi,"projectId",e.target.value)}>
               <option value="">Seleziona cantiere...</option>
-              {cantieri.map(c=><option key={c.id} value={c.id}>{formatNomeCantiere(c)}{formatCommittente(c) ? " — "+formatCommittente(c) : ""}{c.comune ? " · "+c.comune : ""}</option>)}
+              {cantieri.map(c=><option key={c.id} value={c.id}>{formatNomeCantiere(c)}{c.comune ? " · "+c.comune : ""}</option>)}
             </Sel>
             {blocks.length>1 && (
               <button onClick={()=>removeBlock(bi)} style={{ background:"none", border:"none", color:C.red, fontSize:11, cursor:"pointer", fontFamily:"Barlow" }}>Rimuovi cantiere</button>
