@@ -1870,6 +1870,9 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
   const [guidaMezzo, setGuidaMezzo] = useState(!!rapportinoDaModificare?.mezzoGuidato);
   const [mezzoId, setMezzoId] = useState(rapportinoDaModificare?.mezzoGuidato?.id || "");
   const [mezzi, setMezzi] = useState([]);
+  const [segnalaProblema, setSegnalaProblema] = useState(false);
+  const [problemaTipo, setProblemaTipo] = useState("Guasto");
+  const [problemaDescr, setProblemaDescr] = useState("");
   const [note, setNote] = useState(rapportinoDaModificare?.note || "");
   const [saving, setSaving] = useState(false);
   const [blocks, setBlocks] = useState(() => {
@@ -1993,6 +1996,46 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
       } else {
         await addDoc(collection(db,"timesheets"), { ...data, createdAt: serverTimestamp() });
       }
+
+      // Crea segnalazione mezzo + notifica admin
+      if (guidaMezzo && mezzoId && segnalaProblema && problemaDescr.trim()) {
+        const m = mezzi.find(x => x.id === mezzoId);
+        if (m) {
+          const userNomeCompleto = [user.nome, user.cognome].filter(Boolean).join(" ").trim() || user.displayName || "";
+          try {
+            const segRef = await addDoc(collection(db, "segnalazioni_mezzi"), {
+              mezzoId,
+              mezzoTarga: (m.targa || "").toUpperCase(),
+              mezzoModello: m.modello || "",
+              operaioId: user.uid,
+              operaioNome: userNomeCompleto,
+              data: new Date().toISOString().split("T")[0],
+              tipo: problemaTipo,
+              descrizione: problemaDescr.trim(),
+              stato: "aperta",
+              createdAt: serverTimestamp(),
+            });
+            try {
+              const adminsSnap = await getDocs(query(collection(db, "utenti"), where("ruolo", "==", "admin")));
+              for (const a of adminsSnap.docs) {
+                await addDoc(collection(db, "notifiche"), {
+                  tipo: "segnalazione_mezzo",
+                  destinatario: a.id,
+                  mittente: user.uid,
+                  mittenteNome: userNomeCompleto,
+                  testo: `\u26A0 ${problemaTipo} su ${(m.targa || "").toUpperCase()}: ${problemaDescr.trim().slice(0, 60)}`,
+                  contesto: "parco_mezzi",
+                  contestoId: mezzoId,
+                  segnalazioneId: segRef.id,
+                  letto: false,
+                  createdAt: serverTimestamp(),
+                });
+              }
+            } catch(eN) { console.error("Errore notifica admin:", eN); }
+          } catch(e) { console.error("Errore segnalazione mezzo:", e); }
+        }
+      }
+
       onSaved();
       onClose();
     } catch (e) {
@@ -2106,11 +2149,8 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
       </label>
       {guidaMezzo && (
         <div style={{ marginBottom: 12, paddingLeft: 26 }}>
-          <select
-            value={mezzoId}
-            onChange={e => setMezzoId(e.target.value)}
-            style={{ width: "100%", padding: "10px 12px", background: C.surface, border: `1px solid ${mezzoId ? C.accent : C.border}`, borderRadius: 8, fontSize: 14, color: C.text, fontFamily: "inherit" }}
-          >
+          <select value={mezzoId} onChange={e => setMezzoId(e.target.value)}
+            style={{ width: "100%", padding: "10px 12px", background: C.surface, border: `1px solid ${mezzoId ? C.accent : C.border}`, borderRadius: 8, fontSize: 14, color: C.text, fontFamily: "inherit" }}>
             <option value="">Seleziona mezzo...</option>
             {mezzi.map(m => (
               <option key={m.id} value={m.id}>
@@ -2122,6 +2162,36 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
             <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4, fontStyle: "italic" }}>
               Nessun mezzo disponibile. L'amministratore deve aggiungerli dal Parco Mezzi.
             </div>
+          )}
+
+          {mezzoId && (
+            <>
+              <label style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 0", cursor: "pointer", marginTop: 8 }}>
+                <input type="checkbox" checked={segnalaProblema} onChange={e => {
+                  setSegnalaProblema(e.target.checked);
+                  if (!e.target.checked) { setProblemaTipo("Guasto"); setProblemaDescr(""); }
+                }} />
+                <span style={{ fontSize: 13, color: C.red, fontWeight: 600 }}>{"\u26A0"} Segnala guasto o manutenzione</span>
+              </label>
+
+              {segnalaProblema && (
+                <div style={{ background: C.red + "10", border: `1px solid ${C.red}40`, borderRadius: 8, padding: 10, marginBottom: 8 }}>
+                  <div style={{ fontSize: 10, color: C.textMuted, fontWeight: 700, marginBottom: 4, letterSpacing: 0.5 }}>TIPO</div>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                    {["Guasto", "Manutenzione"].map(t => (
+                      <button key={t} type="button" onClick={() => setProblemaTipo(t)}
+                        style={{ flex: 1, padding: "8px 12px", background: problemaTipo === t ? C.red : "transparent", color: problemaTipo === t ? "#fff" : C.text, border: `1px solid ${problemaTipo === t ? C.red : C.border}`, borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        {t}
+                      </button>
+                    ))}
+                  </div>
+                  <div style={{ fontSize: 10, color: C.textMuted, fontWeight: 700, marginBottom: 4, letterSpacing: 0.5 }}>DESCRIZIONE *</div>
+                  <textarea value={problemaDescr} onChange={e => setProblemaDescr(e.target.value)}
+                    placeholder={problemaTipo === "Guasto" ? "Descrivi il problema al mezzo (es: freni rumorosi, perde olio...)" : "Descrivi l'intervento richiesto (es: tagliando in scadenza, gomme da cambiare...)"}
+                    style={{ width: "100%", minHeight: 70, padding: 10, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, color: C.text, fontSize: 13, fontFamily: "inherit", resize: "vertical" }} />
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
