@@ -2427,9 +2427,94 @@ function Gestione({ user }) {
   }, []);
 
   const approvaFeria = async (id, stato) => {
-    await updateDoc(doc(db,"richieste_assenza",id),{stato});
-    setFerie(ferie.filter(f=>f.id!==id));
-    setTutteFerie(tutteFerie.map(f=>f.id===id?{...f,stato}:f));
+    // Trova la richiesta per ricavare operaioId, dal, al, tipo
+    const richiesta = ferie.find(f => f.id === id) || tutteFerie.find(f => f.id === id);
+
+    // Mappa tipo richiesta → codice ERP
+    const mapTipoToCode = (tipo) => {
+      if (!tipo) return "Fe";
+      const t = String(tipo).toLowerCase();
+      if (t.includes("malatt")) return "M";
+      if (t.includes("permesso")) return "P";
+      if (t.includes("assenza") && t.includes("ingiust")) return "AI";
+      return "Fe";
+    };
+
+    // Helper: genera date nel range escludendo sabato/domenica
+    const generaGiorniLavorativi = (dalStr, alStr) => {
+      const giorni = [];
+      if (!dalStr) return giorni;
+      const dal = new Date(dalStr + "T12:00:00");
+      const al = new Date((alStr || dalStr) + "T12:00:00");
+      const cur = new Date(dal);
+      while (cur <= al) {
+        if (cur.getDay() !== 0 && cur.getDay() !== 6) {
+          const y = cur.getFullYear();
+          const m = String(cur.getMonth() + 1).padStart(2, "0");
+          const d = String(cur.getDate()).padStart(2, "0");
+          giorni.push(`${y}-${m}-${d}`);
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+      return giorni;
+    };
+
+    try {
+      // 1. Aggiorna stato della richiesta
+      await updateDoc(doc(db, "richieste_assenza", id), { stato });
+
+      // 2. Se richiesta approvata → crea docs assenze_operai per ogni giorno lavorativo
+      if (stato === "approvata" && richiesta) {
+        const tipoCode = mapTipoToCode(richiesta.tipo);
+        const giorni = generaGiorniLavorativi(richiesta.dal, richiesta.al || richiesta.dal);
+        for (const data of giorni) {
+          const qExist = query(
+            collection(db, "assenze_operai"),
+            where("operaioId", "==", richiesta.operaioId),
+            where("data", "==", data)
+          );
+          const snap = await getDocs(qExist);
+          const assData = {
+            operaioId: richiesta.operaioId,
+            data,
+            tipo: tipoCode,
+            ore: 0,
+            updatedAt: serverTimestamp(),
+          };
+          if (snap.docs.length > 0) {
+            await updateDoc(doc(db, "assenze_operai", snap.docs[0].id), assData);
+          } else {
+            await addDoc(collection(db, "assenze_operai"), {
+              ...assData,
+              createdAt: serverTimestamp(),
+            });
+          }
+        }
+      }
+
+      // 3. Se richiesta rifiutata → rimuovi eventuali assenze del range
+      if (stato === "rifiutata" && richiesta) {
+        const giorni = generaGiorniLavorativi(richiesta.dal, richiesta.al || richiesta.dal);
+        for (const data of giorni) {
+          const qExist = query(
+            collection(db, "assenze_operai"),
+            where("operaioId", "==", richiesta.operaioId),
+            where("data", "==", data)
+          );
+          const snap = await getDocs(qExist);
+          for (const d of snap.docs) {
+            await deleteDoc(doc(db, "assenze_operai", d.id));
+          }
+        }
+      }
+
+      // 4. Aggiorna stato UI locale
+      setFerie(ferie.filter(f => f.id !== id));
+      setTutteFerie(tutteFerie.map(f => f.id === id ? { ...f, stato } : f));
+    } catch (e) {
+      console.error("Errore approvaFeria:", e);
+      alert("Errore durante l'aggiornamento. Controlla la console.");
+    }
   };
 
   const calcolaSovrapposizioni = (richiesta) => {
