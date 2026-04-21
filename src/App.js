@@ -1757,12 +1757,12 @@ function LavorazioneSelect({ value, onChange, gruppiTask, categorie, tasks }) {
     if (!items || items.length === 0) return null;
     return (
       <div key={label}>
-        <div style={{ padding: "8px 14px 4px", fontSize: 10, fontWeight: 700, color: colore, textTransform: "uppercase", letterSpacing: 0.6, background: C.bg, position: "sticky", top: 0, zIndex: 1 }}>
+        <div style={{ padding: "8px 14px 4px", fontSize: 10, fontWeight: 700, color: colore, textTransform: "uppercase", letterSpacing: 0.6, background: `${colore}08`, position: "sticky", top: 0, zIndex: 1 }}>
           {label}
         </div>
         {items.map(t => (
           <div key={t.id} onClick={() => selezionaTask(t.id)}
-            style={{ padding: "10px 14px", fontSize: 13, color: C.text, cursor: "pointer", borderBottom: `1px solid ${C.border}30`, background: value === t.id ? C.accentDim : "transparent" }}>
+            style={{ padding: "11px 14px", fontSize: 13, color: value === t.id ? C.accent : C.text, cursor: "pointer", borderBottom: `1px solid ${C.border}40`, background: value === t.id ? C.accentDim : "transparent", borderLeft: value === t.id ? `3px solid ${C.accent}` : "3px solid transparent", fontWeight: value === t.id ? 600 : 400, transition: "background 0.12s" }}>
             {t.nome || t.name}
           </div>
         ))}
@@ -1793,7 +1793,7 @@ function LavorazioneSelect({ value, onChange, gruppiTask, categorie, tasks }) {
   return (
     <div ref={dropdownRef} style={{ position: "relative", width: "100%", overflow: "visible" }}>
       <div onClick={() => setOpen(!open)}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: C.surface, border: `1px solid ${open ? C.accent : C.border}`, borderRadius: 8, cursor: "pointer", fontSize: 14, color: displayLabel ? C.text : C.textMuted, minHeight: 40 }}>
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", background: `${C.blue}25`, border: `1.5px solid ${open ? C.accent : C.borderLight}`, borderRadius: 10, cursor: "pointer", fontSize: 14, color: displayLabel ? C.text : C.textDim, minHeight: 44, transition: "all 0.15s" }}>
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
           {displayLabel || "Seleziona lavorazione..."}
         </span>
@@ -1807,17 +1807,17 @@ function LavorazioneSelect({ value, onChange, gruppiTask, categorie, tasks }) {
           left: pos.left,
           width: pos.width,
           background: C.card,
-          border: `1px solid ${C.border}`,
-          borderRadius: 10,
-          boxShadow: "0 12px 32px rgba(0,0,0,0.5)",
+          border: `1.5px solid ${C.accent}`,
+          borderRadius: 12,
+          boxShadow: `0 16px 40px rgba(0,0,0,0.7), 0 0 0 1px ${C.accent}30`,
           zIndex: 999999,
           maxHeight: "min(320px, 50vh)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden"
         }}>
-          <div style={{ padding: 10, borderBottom: `1px solid ${C.border}`, flexShrink: 0, background: C.surface }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 10px" }}>
+          <div style={{ padding: 10, borderBottom: `1px solid ${C.borderLight}`, flexShrink: 0, background: C.surface }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.bg, border: `1.5px solid ${C.borderLight}`, borderRadius: 8, padding: "8px 12px" }}>
               <Search size={14} color={C.textMuted} />
               <input ref={inputRef} type="text" value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="Cerca lavorazione..."
@@ -2073,7 +2073,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
       {blocks.map((b,bi) => (
         <div key={bi} style={{ border:`1px solid ${C.border}`, borderRadius:10, marginBottom:10, overflow:"hidden" }}>
           <div style={{ background:`${C.mid}40`, padding:"10px 12px", borderBottom:`1px solid ${C.border}` }}>
-            <div style={{ fontSize:10, color:C.textMuted, fontWeight:700, marginBottom:6 }}>CANTIERE {blocks.length>1?bi+1:""}</div>
+            <div style={{ fontSize:10, color:C.accent, fontWeight:700, letterSpacing:1, marginBottom:6 }}>CANTIERE {blocks.length>1?bi+1:""}</div>
             <Sel value={b.projectId} onChange={e=>updBlock(bi,"projectId",e.target.value)}>
               <option value="">Seleziona cantiere...</option>
               {cantieri.map(c=><option key={c.id} value={c.id}>{formatNomeCantiere(c)}{c.comune ? " · "+c.comune : ""}</option>)}
@@ -2083,7 +2083,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
             )}
           </div>
           <div style={{ padding:"10px 12px" }}>
-            <div style={{ fontSize:10, color:C.textMuted, fontWeight:700, marginBottom:6 }}>LAVORAZIONI</div>
+            <div style={{ fontSize:10, color:C.accent, fontWeight:700, letterSpacing:1, marginBottom:6 }}>LAVORAZIONI</div>
             {b.lavorazioni.map((l,li) => {
               const noteKey = `${bi}-${li}`;
               const notaAperta = noteAperte[noteKey] || !!l.nota;
@@ -2129,7 +2129,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
         </div>
       ))}
 
-      <button onClick={addBlock} style={{ background:"none", border:`1px dashed ${C.border}`, borderRadius:8, color:C.textMuted, fontSize:12, padding:"8px", cursor:"pointer", fontFamily:"Barlow", width:"100%", marginBottom:10 }}>
+      <button onClick={addBlock} style={{ width:"100%", padding:"11px", background:`${C.accent}10`, border:`1.5px dashed ${C.accent}`, borderRadius:10, color:C.accent, fontSize:13, fontWeight:600, fontFamily:"inherit", cursor:"pointer", transition:"all 0.15s", marginBottom:10 }}>
         + Aggiungi cantiere
       </button>
 
