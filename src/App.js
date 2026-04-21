@@ -291,6 +291,7 @@ function Dashboard({ user, stats, onSection }) {
   const [rapAlert, setRapAlert] = useState([]);
   const [showRapForm, setShowRapForm] = useState(false);
   const [cantiereOggi, setCantiereOggi] = useState(null);
+  const [cantiereOggiProject, setCantiereOggiProject] = useState(null);
   const [incarichi, setIncarichi] = useState([]);
   const [ultimiRap, setUltimiRap] = useState([]);
 
@@ -329,6 +330,14 @@ function Dashboard({ user, stats, onSection }) {
     document.addEventListener("visibilitychange", handleVisibility);
     return () => { unsubUltimiRap(); document.removeEventListener("visibilitychange", handleVisibility); };
   }, [user.ruolo, user.uid]);
+
+  useEffect(() => {
+    if (!cantiereOggi?.projectId && !cantiereOggi?.cantiereId) { setCantiereOggiProject(null); return; }
+    const pid = cantiereOggi.projectId || cantiereOggi.cantiereId;
+    getDoc(doc(db, "projects", pid)).then(s => {
+      if (s.exists()) setCantiereOggiProject({ id: s.id, ...s.data() });
+    }).catch(() => {});
+  }, [cantiereOggi?.projectId, cantiereOggi?.cantiereId]);
 
   // Azioni rapide per operaio
   const azioniOperaio = [
@@ -405,8 +414,19 @@ function Dashboard({ user, stats, onSection }) {
         {cantiereOggi && (
           <Card onClick={()=>onSection("cantieri")} style={{ marginBottom:16, padding:16, cursor:"pointer", background:`linear-gradient(135deg, ${C.blue}, ${C.accent})`, border:"none" }}>
             <div style={{ fontSize:10, color:"rgba(255,255,255,0.8)", fontWeight:600, letterSpacing:0.5, marginBottom:4 }}>OGGI LAVORI A</div>
-            <div style={{ fontSize:17, fontWeight:700, color:"#fff" }}>{cantiereOggi.cantiereName||cantiereOggi.projectName||"Cantiere assegnato"}</div>
-            {cantiereOggi.indirizzo && <div style={{ fontSize:12, color:"rgba(255,255,255,0.75)", marginTop:4 }}>{cantiereOggi.indirizzo}</div>}
+            <div style={{ fontSize:17, fontWeight:700, color:"#fff" }}>
+              {cantiereOggiProject ? formatNomeCantiere(cantiereOggiProject) : (cantiereOggi.cantiereName || cantiereOggi.projectName || "Cantiere assegnato")}
+            </div>
+            {cantiereOggiProject && formatCommittente(cantiereOggiProject) && (
+              <div style={{ fontSize:12, color:"rgba(255,255,255,0.85)", marginTop:3, fontWeight:600 }}>
+                {formatCommittente(cantiereOggiProject)}
+              </div>
+            )}
+            {cantiereOggiProject && formatIndirizzo(cantiereOggiProject) ? (
+              <div style={{ fontSize:11, color:"rgba(255,255,255,0.72)", marginTop:4 }}>📍 {formatIndirizzo(cantiereOggiProject)}</div>
+            ) : cantiereOggi.indirizzo && (
+              <div style={{ fontSize:11, color:"rgba(255,255,255,0.72)", marginTop:4 }}>📍 {cantiereOggi.indirizzo}</div>
+            )}
             {cantiereOggi.lavorazione && <div style={{ fontSize:11, color:"rgba(255,255,255,0.9)", marginTop:6, fontWeight:600 }}>{cantiereOggi.lavorazione}</div>}
           </Card>
         )}
@@ -873,7 +893,7 @@ function Cantieri({ user }) {
     const disFiltrati = disegni.filter(d => d.categoria === disTab);
     // Misuratore aperto su un file del cantiere
     if (misuraFile) {
-      return <MisuratoreDisegno user={user} projectId={sel.id} projectName={sel.clientName||sel.name} fileUrl={misuraFile.url} fileName={misuraFile.nome} onBack={() => setMisuraFile(null)} />;
+      return <MisuratoreDisegno user={user} projectId={sel.id} projectName={formatNomeCantiere(sel)} fileUrl={misuraFile.url} fileName={misuraFile.nome} onBack={() => setMisuraFile(null)} />;
     }
     return (
       <div style={{ paddingBottom:80, flex:1, overflowY:"auto" }} className="fu">
@@ -883,8 +903,24 @@ function Cantieri({ user }) {
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4 }}>
             <div style={{ flex:1 }}>
               {sel.code && <div style={{ fontSize:10, color:C.accent, fontWeight:700, letterSpacing:1, marginBottom:4 }}>{sel.code}</div>}
-              <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:22 }}>{sel.clientName || sel.name}</div>
-              {sel.name && sel.name !== sel.clientName && <div style={{ fontSize:12, color:C.accent, marginTop:2 }}>{sel.name}</div>}
+              <div style={{ fontFamily:"Barlow Condensed", fontWeight:800, fontSize:22, color: C.text }}>
+                {formatNomeCantiere(sel)}
+              </div>
+              {formatCommittente(sel) && (
+                <div style={{ fontSize:13, color:C.text, marginTop:3, fontWeight:600 }}>
+                  {formatCommittente(sel)}
+                </div>
+              )}
+              {formatIndirizzo(sel) && (
+                <div style={{ fontSize:11, color:C.textMuted, marginTop:4, display:"flex", alignItems:"center", gap:4 }}>
+                  <span>📍</span><span>{formatIndirizzo(sel)}</span>
+                </div>
+              )}
+              {sel.code && (
+                <div style={{ fontSize:10, color:C.textMuted, marginTop:3, opacity:0.8 }}>
+                  Commessa {sel.code}
+                </div>
+              )}
             </div>
             <span style={{ background:`${STATUS_COLOR[sel.status]||C.textMuted}20`, color:STATUS_COLOR[sel.status]||C.textMuted, border:`1px solid ${STATUS_COLOR[sel.status]||C.textMuted}40`, borderRadius:6, padding:"3px 10px", fontSize:10, fontWeight:700, flexShrink:0, marginTop:4 }}>
               {STATUS_LABEL[sel.status]||sel.status}
@@ -912,9 +948,10 @@ function Cantieri({ user }) {
               <Card>
                 <SecTitle label="Dati Commessa" />
                 {[
-                  {l:"Committente", v:sel.clientName},
+                  {l:"Committente", v:formatCommittente(sel)},
                   {l:"P.IVA Cliente", v:sel.clientVatNumber},
-
+                  {l:"Indirizzo", v:formatIndirizzo(sel)},
+                  {l:"Descrizione lavori", v:sel.descrizioneLavori},
                   {l:"Inizio", v:sel.startDate?.toDate?sel.startDate.toDate().toLocaleDateString("it-IT"):sel.startDate},
                   {l:"Fine Prevista", v:sel.endDate?.toDate?sel.endDate.toDate().toLocaleDateString("it-IT"):sel.endDate},
                 ].filter(r=>r.v).map(({l,v}) => (
@@ -1034,7 +1071,7 @@ function Cantieri({ user }) {
             <AppuntiCantiere
               user={user}
               projectId={sel.id}
-              projectName={sel.clientName || sel.name}
+              projectName={formatNomeCantiere(sel)}
               onBack={() => setTab("anagrafica")}
             />
           )}
@@ -1094,8 +1131,16 @@ function Cantieri({ user }) {
         <div style={{ flex: 1 }}>
           {c.code && <div style={{ fontSize: 10, color: C.accent, fontWeight: 700, letterSpacing: 1, marginBottom: 3 }}>{c.code}</div>}
           <div style={{ fontFamily: "Barlow Condensed", fontWeight: 800, fontSize: 18 }}>{c.name}</div>
-          {c.clientName && <div style={{ fontSize: 12, color: C.textDim, marginTop: 2 }}>{c.clientName}</div>}
-          {c.address && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2 }}>{c.address}</div>}
+          {formatCommittente(c) && (
+            <div style={{ fontSize: 12, color: C.text, marginTop: 2, fontWeight: 600 }}>
+              {formatCommittente(c)}
+            </div>
+          )}
+          {formatIndirizzo(c) && (
+            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 2, display: "flex", alignItems: "center", gap: 3 }}>
+              <span>📍</span><span>{formatIndirizzo(c)}</span>
+            </div>
+          )}
         </div>
         <span style={{ background: `${STATUS_COLOR[c.status] || C.textMuted}20`, color: STATUS_COLOR[c.status] || C.textMuted, border: `1px solid ${STATUS_COLOR[c.status] || C.textMuted}40`, borderRadius: 6, padding: "2px 8px", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>
           {STATUS_LABEL[c.status] || c.status}
@@ -1937,7 +1982,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
             <div style={{ fontSize:10, color:C.textMuted, fontWeight:700, marginBottom:6 }}>CANTIERE {blocks.length>1?bi+1:""}</div>
             <Sel value={b.projectId} onChange={e=>updBlock(bi,"projectId",e.target.value)}>
               <option value="">Seleziona cantiere...</option>
-              {cantieri.map(c=><option key={c.id} value={c.id}>{c.name}{c.code?" ("+c.code+")":""}</option>)}
+              {cantieri.map(c=><option key={c.id} value={c.id}>{formatNomeCantiere(c)}{formatCommittente(c) ? " — "+formatCommittente(c) : ""}{c.comune ? " · "+c.comune : ""}</option>)}
             </Sel>
             {blocks.length>1 && (
               <button onClick={()=>removeBlock(bi)} style={{ background:"none", border:"none", color:C.red, fontSize:11, cursor:"pointer", fontFamily:"Barlow" }}>Rimuovi cantiere</button>
@@ -2187,6 +2232,7 @@ function AreaPersonale({ user, onSection }) {
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.85)", fontWeight: 700, letterSpacing: 1, marginBottom: 6 }}>OGGI LAVORI A</div>
               <div style={{ fontSize: 20, fontWeight: 700, color: "#fff" }}>{cantiereOggi.nomeCantiere || "Cantiere assegnato"}</div>
               {cantiereOggi.indirizzo && <div style={{ fontSize: 12, color: "rgba(255,255,255,0.8)", marginTop: 6 }}>📍 {cantiereOggi.indirizzo}</div>}
+              {cantiereOggi.committente && <div style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 3, fontWeight: 600 }}>{cantiereOggi.committente}</div>}
             </Card>
           )}
 
@@ -3818,8 +3864,9 @@ function AppuntiHub({ user, onSelect }) {
           onTouchEnd={e => e.currentTarget.style.opacity="1"}>
           <div style={{ width:40, height:40, borderRadius:10, background:C.accentDim, display:"flex", alignItems:"center", justifyContent:"center", fontSize:20, flexShrink:0 }}>📷</div>
           <div style={{ flex:1 }}>
-            <div style={{ fontWeight:700, fontSize:15 }}>{c.clientName || c.name}</div>
-            {c.address && <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>📍 {c.address}</div>}
+            <div style={{ fontWeight:700, fontSize:15 }}>{formatNomeCantiere(c)}</div>
+            {formatCommittente(c) && <div style={{ fontSize:12, color:C.text, marginTop:2, fontWeight:600 }}>{formatCommittente(c)}</div>}
+            {formatIndirizzo(c) && <div style={{ fontSize:11, color:C.textMuted, marginTop:2 }}>📍 {formatIndirizzo(c)}</div>}
           </div>
           <span style={{ color:C.accent, fontSize:20 }}>›</span>
         </div>
@@ -4929,6 +4976,26 @@ function MisuratoreDisegno({ user, projectId, projectName, onBack, fileUrl: init
       )}
     </div>
   );
+}
+
+// ── Helper cantiere: formattazione unificata ────────────────────
+function formatCommittente(project) {
+  if (!project) return "";
+  const n = project.clientName || "";
+  const c = project.clientSurname || "";
+  return [n, c].filter(Boolean).join(" ").trim();
+}
+
+function formatIndirizzo(project) {
+  if (!project) return "";
+  const via = project.indirizzo || "";
+  const citta = [project.cap, project.comune, project.provincia ? `(${project.provincia})` : ""].filter(Boolean).join(" ").trim();
+  return [via, citta].filter(Boolean).join(" · ").trim();
+}
+
+function formatNomeCantiere(project) {
+  if (!project) return "Cantiere";
+  return project.name || project.clientName || "Cantiere";
 }
 
 export default function App() {
