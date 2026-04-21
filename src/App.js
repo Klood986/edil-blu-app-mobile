@@ -1559,6 +1559,44 @@ function CalendarioSettimanale({ user, targetUserId, targetUserNome, canWrite })
               </div>
             ))}
           </div>
+          {/* Banda FERIE: si mostra solo se almeno un giorno della settimana ha ferie */}
+          {(() => {
+            const giorniFerie = GIORNI.map((g, i) => {
+              const dGiorno = new Date(settimana);
+              dGiorno.setDate(dGiorno.getDate() + i);
+              const dateStr = dGiorno.toISOString().split("T")[0];
+              return getFeriaDelGiorno(dateStr);
+            });
+            if (!giorniFerie.some(f => f)) return null;
+            return (
+              <div style={{ display:"grid", gridTemplateColumns:"52px repeat(6,1fr)", borderBottom:`1px solid ${C.border}40`, minHeight: 56 }}>
+                <div />
+                {giorniFerie.map((feria, i) => (
+                  <div key={i} style={{
+                    borderLeft: `1px solid ${C.border}40`,
+                    background: feria ? `${C.red}15` : "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    padding: 4
+                  }}>
+                    {feria && (
+                      <span style={{
+                        fontSize: 13,
+                        fontWeight: 800,
+                        color: C.red,
+                        letterSpacing: 1,
+                        fontFamily: "Barlow Condensed",
+                        textTransform: "uppercase"
+                      }}>
+                        {feria.tipo === "Malattia" ? "MALATTIA" : feria.tipo === "Permesso" ? "PERMESSO" : "FERIE"}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
           {FASCE.map(fascia => (
             <div key={fascia} style={{ display:"grid", gridTemplateColumns:"52px repeat(6,1fr)", borderBottom:`1px solid ${C.border}40` }}>
               <div style={{ padding:"6px 4px", fontSize:9, color:C.textMuted, fontWeight:700, textAlign:"right", paddingRight:8, paddingTop:8 }}>{fascia}</div>
@@ -1570,15 +1608,8 @@ function CalendarioSettimanale({ user, targetUserId, targetUserNome, canWrite })
                 const dateStr = dGiorno.toISOString().split("T")[0];
                 const feriaGiorno = getFeriaDelGiorno(dateStr);
                 return (
-                  <div key={g} onClick={()=>apriCella(i,fascia)}
-                    style={{ minHeight:44, borderLeft:`1px solid ${C.border}40`, padding:"4px 6px", cursor:canWrite?"pointer":"default", background:isOggi(i)?"rgba(79,172,222,0.04)":"transparent", position:"relative" }}>
-                    {feriaGiorno && (
-                      <div style={{ position:"absolute", top:0, left:0, right:0, bottom:0, background:`${C.red}15`, border:`2px dashed ${C.red}`, borderRadius:6, display:"flex", alignItems:"center", justifyContent:"center", zIndex:2, pointerEvents:"none" }}>
-                        <span style={{ fontSize:10, fontWeight:800, color:C.red, letterSpacing:0.5, textTransform:"uppercase", background:C.bg, padding:"2px 8px", borderRadius:4 }}>
-                          {feriaGiorno.tipo === "Malattia" ? "MALAT." : feriaGiorno.tipo === "Permesso" ? "PERM." : "FERIE"}
-                        </span>
-                      </div>
-                    )}
+                  <div key={g} onClick={()=> feriaGiorno ? null : apriCella(i,fascia)}
+                    style={{ minHeight:44, borderLeft:`1px solid ${C.border}40`, padding:"4px 6px", cursor: feriaGiorno ? "not-allowed" : (canWrite?"pointer":"default"), background: feriaGiorno ? `${C.red}08` : (isOggi(i)?"rgba(79,172,222,0.04)":"transparent"), position:"relative", opacity: feriaGiorno ? 0.4 : 1 }}>
                     {val && (
                       <div style={{ background:`${C.blue}80`, border:`1px solid ${C.accent}40`, borderRadius:4, padding:"3px 6px", fontSize:10, color:C.text, lineHeight:1.4, wordBreak:"break-word" }}>
                         {val}
