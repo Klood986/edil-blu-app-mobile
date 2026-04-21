@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { auth, db, storage, functions } from "./firebase";
 import {
   signInWithEmailAndPassword, signOut, onAuthStateChanged,
@@ -1691,16 +1692,40 @@ function LavorazioneSelect({ value, onChange, gruppiTask, categorie, tasks }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const dropdownRef = useRef(null);
+  const portalRef = useRef(null);
   const inputRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
 
   const allTasks = tasks || [];
   const selectedTask = allTasks.find(t => t.id === value);
   const displayLabel = selectedTask ? (selectedTask.nome || selectedTask.name) : "";
 
   useEffect(() => {
+    if (!open || !dropdownRef.current) return;
+    const updatePos = () => {
+      const rect = dropdownRef.current.getBoundingClientRect();
+      setPos({
+        top: rect.bottom + 4,
+        left: rect.left,
+        width: rect.width,
+      });
+    };
+    updatePos();
+    window.addEventListener("resize", updatePos);
+    window.addEventListener("scroll", updatePos, true);
+    return () => {
+      window.removeEventListener("resize", updatePos);
+      window.removeEventListener("scroll", updatePos, true);
+    };
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
     const handleClick = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target) &&
+        (!portalRef.current || !portalRef.current.contains(e.target))
+      ) {
         setOpen(false);
         setSearch("");
       }
@@ -1775,8 +1800,22 @@ function LavorazioneSelect({ value, onChange, gruppiTask, categorie, tasks }) {
         <span style={{ color: C.textMuted, marginLeft: 8, transition: "transform 0.15s", transform: open ? "rotate(180deg)" : "rotate(0)" }}>{"\u25BE"}</span>
       </div>
 
-      {open && (
-        <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: C.card, border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 12px 32px rgba(0,0,0,0.5)", zIndex: 9999, maxHeight: "min(320px, 50vh)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {open && createPortal(
+        <div ref={portalRef} style={{
+          position: "fixed",
+          top: pos.top,
+          left: pos.left,
+          width: pos.width,
+          background: C.card,
+          border: `1px solid ${C.border}`,
+          borderRadius: 10,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.5)",
+          zIndex: 999999,
+          maxHeight: "min(320px, 50vh)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden"
+        }}>
           <div style={{ padding: 10, borderBottom: `1px solid ${C.border}`, flexShrink: 0, background: C.surface }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "6px 10px" }}>
               <Search size={14} color={C.textMuted} />
@@ -1798,7 +1837,8 @@ function LavorazioneSelect({ value, onChange, gruppiTask, categorie, tasks }) {
               groups.map(g => renderGruppo(g.label, g.items, g.color))
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
