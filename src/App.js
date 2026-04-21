@@ -1892,6 +1892,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
   });
 
   const [taskPrioritarie, setTaskPrioritarie] = useState([]);
+  const [categorieOperaio, setCategorieOperaio] = useState([]);
 
   useEffect(() => {
     getDocs(query(collection(db,"projects"),orderBy("name"))).then(s => setCantieri(s.docs.filter(d=>d.data().status==="active"||d.data().status==="draft").map(d=>({id:d.id,...d.data()}))));
@@ -1911,9 +1912,45 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
     }).catch(() => {});
   }, [user]);
 
+  useEffect(() => {
+    if (!user?.uid) return;
+    getDoc(doc(db, "utenti", user.uid)).then(snap => {
+      if (snap.exists()) {
+        const d = snap.data();
+        setCategorieOperaio(Array.isArray(d.categorieOperaio) ? d.categorieOperaio : []);
+      }
+    }).catch(() => {});
+  }, [user]);
+
   const categorie = [...new Set(tasks.map(t=>t.categoria))].sort();
 
   const gruppiTask = useMemo(() => {
+    // NUOVA LOGICA: se operaio ha categorieOperaio, prioritizza per categoria
+    if (categorieOperaio.length > 0) {
+      const catPrimaria = categorieOperaio[0];
+      const catSecondarie = categorieOperaio.slice(1);
+
+      const prioList = tasks.filter(t => t.categoria === catPrimaria)
+        .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+      const prioIds = new Set(prioList.map(t => t.id));
+
+      const stessaCat = tasks.filter(t =>
+        !prioIds.has(t.id) && catSecondarie.includes(t.categoria)
+      ).sort((a, b) => {
+        const aIdx = catSecondarie.indexOf(a.categoria);
+        const bIdx = catSecondarie.indexOf(b.categoria);
+        if (aIdx !== bIdx) return aIdx - bIdx;
+        return (a.nome || "").localeCompare(b.nome || "");
+      });
+      const stessaCatIds = new Set(stessaCat.map(t => t.id));
+
+      const altre = tasks.filter(t => !prioIds.has(t.id) && !stessaCatIds.has(t.id))
+        .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+
+      return { prioList, stessaCat, altre };
+    }
+
+    // FALLBACK: vecchia logica con taskPrioritarie (lavorazioni_ordinate)
     if (!taskPrioritarie.length) return null;
     const prioList = taskPrioritarie.map(tid => tasks.find(t => t.id === tid)).filter(Boolean);
     const prioIds = new Set(prioList.map(t => t.id));
@@ -1923,7 +1960,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
     const altre = tasks.filter(t => !prioIds.has(t.id) && !stessaCatIds.has(t.id))
       .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
     return { prioList, stessaCat, altre };
-  }, [tasks, taskPrioritarie]);
+  }, [tasks, taskPrioritarie, categorieOperaio]);
 
   const updBlock = (bi, field, val) => setBlocks(prev => prev.map((b,i) => {
     if (i!==bi) return b;
