@@ -1867,6 +1867,9 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
     return new Date().toISOString().split("T")[0];
   });
   const [noPasto, setNoPasto] = useState(rapportinoDaModificare?.noPasto || false);
+  const [guidaMezzo, setGuidaMezzo] = useState(!!rapportinoDaModificare?.mezzoGuidato);
+  const [mezzoId, setMezzoId] = useState(rapportinoDaModificare?.mezzoGuidato?.id || "");
+  const [mezzi, setMezzi] = useState([]);
   const [note, setNote] = useState(rapportinoDaModificare?.note || "");
   const [saving, setSaving] = useState(false);
   const [blocks, setBlocks] = useState(() => {
@@ -1892,6 +1895,9 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
     getDocs(query(collection(db,"timesheet_tasks"),orderBy("categoria"))).then(s => {
       setTasks(s.docs.filter(d=>d.data().attivo!==false).map(d=>({id:d.id,...d.data()})));
     });
+    getDocs(query(collection(db, "parco_mezzi"), orderBy("targa")))
+      .then(s => setMezzi(s.docs.map(d => ({ id: d.id, ...d.data() }))))
+      .catch(() => setMezzi([]));
   }, []);
 
   useEffect(() => {
@@ -1969,6 +1975,11 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
         hoursWorked: totaleOre,
         taskDescription: allLavs.map(l=>l.taskName).join(", "),
         noPasto,
+        mezzoGuidato: guidaMezzo && mezzoId ? (() => {
+          const m = mezzi.find(x => x.id === mezzoId);
+          if (!m) return null;
+          return { id: m.id, modello: m.modello || "", targa: m.targa || "", tipo: m.tipo || "" };
+        })() : null,
         note: note.trim(),
         date: new Date(date),
         status: submitted ? "submitted" : "draft",
@@ -2084,6 +2095,36 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
         <input type="checkbox" checked={noPasto} onChange={e=>setNoPasto(e.target.checked)} />
         No pasto
       </label>
+
+      {/* Guida mezzo */}
+      <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, color:C.textDim, marginBottom:10, cursor:"pointer" }}>
+        <input type="checkbox" checked={guidaMezzo} onChange={e => {
+          setGuidaMezzo(e.target.checked);
+          if (!e.target.checked) setMezzoId("");
+        }} />
+        Guida furgone/mezzo
+      </label>
+      {guidaMezzo && (
+        <div style={{ marginBottom: 12, paddingLeft: 26 }}>
+          <select
+            value={mezzoId}
+            onChange={e => setMezzoId(e.target.value)}
+            style={{ width: "100%", padding: "10px 12px", background: C.surface, border: `1px solid ${mezzoId ? C.accent : C.border}`, borderRadius: 8, fontSize: 14, color: C.text, fontFamily: "inherit" }}
+          >
+            <option value="">Seleziona mezzo...</option>
+            {mezzi.map(m => (
+              <option key={m.id} value={m.id}>
+                {(m.targa || "").toUpperCase()}{m.modello ? " · " + m.modello : ""}
+              </option>
+            ))}
+          </select>
+          {mezzi.length === 0 && (
+            <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4, fontStyle: "italic" }}>
+              Nessun mezzo disponibile. L'amministratore deve aggiungerli dal Parco Mezzi.
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Note */}
       <Txta placeholder="Note aggiuntive..." value={note} onChange={e=>setNote(e.target.value)} rows={2} />
@@ -2372,6 +2413,12 @@ function AreaPersonale({ user, onSection }) {
                   </div>
                 )}
                 {r.noPasto && <div style={{ fontSize: 11, color: C.red, marginBottom: 4 }}>No pasto</div>}
+                {r.mezzoGuidato && (
+                  <div style={{ fontSize: 11, color: C.accent, marginBottom: 4 }}>
+                    🚐 {(r.mezzoGuidato.targa || "").toUpperCase()}
+                    {r.mezzoGuidato.modello ? " · " + r.mezzoGuidato.modello : ""}
+                  </div>
+                )}
                 {r.note && <div style={{ fontSize: 12, color: C.textMuted, fontStyle: "italic", marginBottom: 8 }}>{r.note}</div>}
                 {modificabile && !isDraft && (
                   <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, marginTop: 4 }}>
