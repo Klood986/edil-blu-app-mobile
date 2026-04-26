@@ -21,6 +21,7 @@ import { Home, HardHat, MessageCircle, User, Menu as MenuIcon,
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import InstallAppBanner from "./components/InstallAppBanner";
 
 // ─── DESIGN SYSTEM ────────────────────────────────────────────────────────────
 // Palette importata da theme.js — default dark per retrocompatibilità
@@ -5369,6 +5370,7 @@ export default function App() {
           );
         })}
       </nav>
+      <InstallAppBanner />
     </div>
   );
 }
