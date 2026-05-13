@@ -40,6 +40,85 @@ function fmtOreIT(n) {
   return String(n).replace(".", ",");
 }
 
+// ─── Helper: orari turni rapportino (HH:MM ↔ minuti) ─────────────────────────
+// "08:30" -> 510 | "25:00" -> null | "abc" -> null
+function parseTime(hhmm) {
+  if (typeof hhmm !== "string") return null;
+  const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10);
+  const min = parseInt(m[2], 10);
+  if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+  return h * 60 + min;
+}
+
+// true se hhmm cade su un multiplo di 15 min. Stringa vuota = true (gestita altrove).
+function isStep15Min(hhmm) {
+  if (!hhmm) return true;
+  const m = parseTime(hhmm);
+  if (m === null) return false;
+  return m % 15 === 0;
+}
+
+// Ore decimali (string IT o number) -> minuti interi (round, no floating point garbage)
+function oreToMin(ore) {
+  const n = parseOreIT(ore);
+  if (typeof n !== "number") return 0;
+  return Math.round(n * 60);
+}
+
+// Somma minuti di tutti i turni con tempi validi (fine > inizio)
+function sumMinTurni(turni) {
+  if (!Array.isArray(turni)) return 0;
+  return turni.reduce((acc, t) => {
+    const i = parseTime(t?.inizio);
+    const f = parseTime(t?.fine);
+    if (i === null || f === null || f <= i) return acc;
+    return acc + (f - i);
+  }, 0);
+}
+
+// Minuti del permesso (0 se non attivo o invalido)
+function permessoMin(p) {
+  if (!p || !p.attivo) return 0;
+  const da = parseTime(p.da);
+  const a = parseTime(p.a);
+  if (da === null || a === null || a <= da) return 0;
+  return a - da;
+}
+
+// true se [da,a] del permesso è interamente contenuto in UN singolo turno valido
+function permessoDentroTurni(p, turni) {
+  if (!p || !p.attivo) return true;
+  const da = parseTime(p.da);
+  const a = parseTime(p.a);
+  if (da === null || a === null || a <= da) return false;
+  if (!Array.isArray(turni)) return false;
+  return turni.some(t => {
+    const i = parseTime(t?.inizio);
+    const f = parseTime(t?.fine);
+    if (i === null || f === null || f <= i) return false;
+    return da >= i && a <= f;
+  });
+}
+
+// true se ogni turno ha tempi validi e fine > inizio (array non vuoto)
+function turniValidi(turni) {
+  if (!Array.isArray(turni) || turni.length === 0) return false;
+  return turni.every(t => {
+    const i = parseTime(t?.inizio);
+    const f = parseTime(t?.fine);
+    return i !== null && f !== null && f > i;
+  });
+}
+
+// Formatta minuti come ore decimali italiane: 450 -> "7,5h" | 480 -> "8h" | 0 -> "0h"
+function fmtMinAsOreIT(m) {
+  if (!m || m <= 0) return "0h";
+  const ore = Math.round((m / 60) * 100) / 100;
+  return String(ore).replace(".", ",") + "h";
+}
+
 // ─── DESIGN SYSTEM ────────────────────────────────────────────────────────────
 // Palette importata da theme.js — default dark per retrocompatibilità
 import { themes } from "./theme";
@@ -121,13 +200,15 @@ function Card({ children, style={}, onClick }) {
     style={{ background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:18, marginBottom:10, cursor:onClick?"pointer":"default", transition:"transform 0.15s, box-shadow 0.15s", transform:hov?"scale(1.01)":"none", boxShadow:hov?`0 4px 20px ${C.border}60`:"none", ...style }}>{children}</div>;
 }
 
-function Inp({ placeholder, value, onChange, type="text", inputMode, onBlur, style={} }) {
+function Inp({ placeholder, value, onChange, type="text", inputMode, onBlur, disabled, step, style={} }) {
   const { C, theme } = useTheme();
   const [focused, setFocused] = useState(false);
   return <input type={type} inputMode={inputMode} placeholder={placeholder} value={value} onChange={onChange}
+    disabled={disabled}
+    step={step}
     onFocus={()=>setFocused(true)}
     onBlur={(e)=>{ setFocused(false); if (onBlur) onBlur(e); }}
-    style={{ width:"100%", boxSizing:"border-box", background:theme==="dark"?`${C.mid}40`:C.surface, border:`1.5px solid ${focused?C.accent:C.border}`, borderRadius:10, color:C.text, padding:"12px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif", marginBottom:10, transition:"border-color 0.15s", ...style }} />;
+    style={{ width:"100%", boxSizing:"border-box", background:theme==="dark"?`${C.mid}40`:C.surface, border:`1.5px solid ${focused?C.accent:C.border}`, borderRadius:10, color:C.text, padding:"12px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif", marginBottom:10, transition:"border-color 0.15s", cursor: disabled ? "not-allowed" : "auto", opacity: disabled ? 0.55 : 1, ...style }} />;
 }
 
 function Txta({ placeholder, value, onChange, rows=3 }) {
@@ -1869,6 +1950,8 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
   const readOnly = rapportinoDaModificare?.status === "submitted"
                    || rapportinoDaModificare?.status === "approved"
                    || rapportinoDaModificare?.status === "rejected";
+  // LEGACY-EDIT: rapportino storico salvato prima dell'introduzione dei turni
+  const isLegacyEdit = isEdit && (!Array.isArray(rapportinoDaModificare?.turni) || rapportinoDaModificare.turni.length === 0);
   const [showConfermaInvio, setShowConfermaInvio] = useState(false);
   const [showConfermaDelete, setShowConfermaDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -1908,6 +1991,22 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
       if (result.length) return result;
     }
     return [{ projectId:"", projectName:"", lavorazioni:[{ taskId:"", taskName:"", categoria:"", ore:0, nota:"" }] }];
+  });
+
+  // Turni di lavoro: NEW = valore esistente o default 08-12 / 13-17 | LEGACY-EDIT = []
+  const [turni, setTurni] = useState(() => {
+    if (isLegacyEdit) return [];
+    if (Array.isArray(rapportinoDaModificare?.turni) && rapportinoDaModificare.turni.length > 0) {
+      return rapportinoDaModificare.turni.map(t => ({ inizio: t?.inizio || "", fine: t?.fine || "" }));
+    }
+    return [{ inizio: "08:00", fine: "12:00" }, { inizio: "13:00", fine: "17:00" }];
+  });
+  const [permesso, setPermesso] = useState(() => {
+    const p = rapportinoDaModificare?.permesso;
+    if (!isLegacyEdit && p && typeof p === "object") {
+      return { attivo: !!p.attivo, da: p.da || "", a: p.a || "" };
+    }
+    return { attivo: false, da: "", a: "" };
   });
 
   const [taskPrioritarie, setTaskPrioritarie] = useState([]);
@@ -2003,7 +2102,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
   }));
 
   const addLav = (bi) => setBlocks(prev => prev.map((b,i) => i!==bi ? b : {
-    ...b, lavorazioni:[...b.lavorazioni,{ taskId:"", taskName:"", categoria:"", ore:0 }]
+    ...b, lavorazioni:[...b.lavorazioni,{ taskId:"", taskName:"", categoria:"", ore:0, nota:"" }]
   }));
 
   const removeLav = (bi, li) => setBlocks(prev => prev.map((b,i) => i!==bi ? b : {
@@ -2013,10 +2112,53 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
   const addBlock = () => setBlocks(prev => [...prev, { projectId:"", projectName:"", lavorazioni:[{ taskId:"", taskName:"", categoria:"", ore:0, nota:"" }] }]);
   const removeBlock = (bi) => setBlocks(prev => prev.filter((_,i)=>i!==bi));
 
+  const addTurno = () => setTurni(prev => [...prev, { inizio: "", fine: "" }]);
+  const updTurno = (ti, field, val) => setTurni(prev => prev.map((t, i) => i === ti ? { ...t, [field]: val } : t));
+  const removeTurno = (ti) => setTurni(prev => prev.filter((_, i) => i !== ti));
+
+  // Totali (minuti interi) + errore inline per la sezione orari
+  const oreInfo = useMemo(() => {
+    const lavMin = blocks.reduce((s, b) =>
+      s + b.lavorazioni.reduce((s2, l) => s2 + oreToMin(l.ore), 0), 0);
+    const turniMin = sumMinTurni(turni);
+    const permMin = permessoMin(permesso);
+    const netMin = turniMin - permMin;
+    const diffMin = lavMin - netMin;
+
+    let errore = null;
+    if (turni.length > 0) {
+      const hasEmpty = turni.some(t => !t.inizio || !t.fine);
+      const allTimes = turni.flatMap(t => [t.inizio, t.fine]);
+      if (permesso.attivo) allTimes.push(permesso.da, permesso.a);
+      const stepViolation = allTimes.some(t => !isStep15Min(t));
+      if (hasEmpty) {
+        errore = "Compila inizio e fine per tutti i turni.";
+      } else if (stepViolation) {
+        errore = "Gli orari devono essere multipli di 15 minuti.";
+      } else if (!turniValidi(turni)) {
+        errore = "Controlla i turni: l'orario di fine deve essere dopo l'inizio.";
+      } else if (permesso.attivo) {
+        const da = parseTime(permesso.da);
+        const a = parseTime(permesso.a);
+        if (da === null || a === null) errore = "Inserisci da/a del permesso.";
+        else if (a <= da) errore = "L'orario di fine permesso deve essere dopo l'inizio.";
+        else if (!permessoDentroTurni(permesso, turni)) errore = "Il permesso deve essere interamente dentro un singolo turno.";
+      }
+    }
+    return { lavMin, turniMin, permMin, netMin, diffMin, errore };
+  }, [blocks, turni, permesso]);
+
+  // Validazione orari: legacy con turni vuoti = skip | NEW con turni vuoti = fail | altrimenti strict
+  const orariValidationOK = useMemo(() => {
+    if (turni.length === 0) return isLegacyEdit;
+    if (oreInfo.errore) return false;
+    return oreInfo.diffMin === 0;
+  }, [turni.length, isLegacyEdit, oreInfo]);
+
   const canSave = blocks.every(b => b.projectId && b.lavorazioni.every(l=>{
     const n = parseOreIT(l.ore);
     return l.taskId && typeof n === "number" && n > 0;
-  }));
+  })) && orariValidationOK;
 
   const save = async (submitted = false) => {
     if (!canSave) return;
@@ -2052,6 +2194,15 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
       if (submitted) {
         data.submittedAt = serverTimestamp();
         data.submittedBy = auth.currentUser?.uid || "";
+      }
+      // Orari: scriviamo i campi solo se l'utente ha effettivamente compilato turni.
+      // Legacy-edit con turni.length===0 = il doc resta legacy puro (no campi ibridi).
+      if (turni.length > 0) {
+        data.turni = turni.map(t => ({ inizio: t.inizio, fine: t.fine }));
+        data.permesso = permesso.attivo
+          ? { attivo: true, da: permesso.da, a: permesso.a }
+          : { attivo: false, da: "", a: "" };
+        data.oreNetteTurni = (sumMinTurni(turni) - permessoMin(permesso)) / 60;
       }
       if (rapportinoDaModificare?.id) {
         await updateDoc(doc(db, "timesheets", rapportinoDaModificare.id), { ...data, updatedAt: serverTimestamp() });
@@ -2130,6 +2281,87 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
       {/* Data */}
       <div style={{ fontSize:10, color:C.textMuted, fontWeight:700, marginBottom:4 }}>DATA</div>
       <Inp type="date" value={date} onChange={e=>setDate(e.target.value)} />
+
+      {/* Orari di lavoro */}
+      <div style={{ border:`1px solid ${C.border}`, borderRadius:10, marginBottom:10, overflow:"hidden" }}>
+        <div style={{ background:`${C.mid}40`, padding:"10px 12px", borderBottom:`1px solid ${C.border}` }}>
+          <div style={{ fontSize:10, color:C.accent, fontWeight:700, letterSpacing:1 }}>ORARI DI LAVORO</div>
+        </div>
+        <div style={{ padding:"10px 12px" }}>
+          {isLegacyEdit && turni.length === 0 && (
+            readOnly ? (
+              <div style={{ fontSize:13, color:C.textMuted, fontStyle:"italic" }}>
+                Orari non registrati (rapportino legacy). —
+              </div>
+            ) : (
+              <div style={{ padding:"10px 12px", background:`${C.accent}10`, border:`1px dashed ${C.accent}50`, borderRadius:8, fontSize:12, color:C.textDim, marginBottom:10, lineHeight:1.4 }}>
+                Rapportino legacy senza orari. Puoi aggiungerli ora se vuoi (consigliato per buste paga future), oppure lasciare vuoto.
+              </div>
+            )
+          )}
+
+          {turni.length > 0 && (
+            <>
+              {turni.map((t, ti) => (
+                <div key={ti} style={{ display:"flex", gap:6, alignItems:"center", marginBottom:8 }}>
+                  <Inp type="time" value={t.inizio} disabled={readOnly} step={900} onChange={e=>updTurno(ti,"inizio",e.target.value)} style={{ flex:1, marginBottom:0 }} />
+                  <span style={{ color:C.textMuted, fontSize:13 }}>→</span>
+                  <Inp type="time" value={t.fine} disabled={readOnly} step={900} onChange={e=>updTurno(ti,"fine",e.target.value)} style={{ flex:1, marginBottom:0 }} />
+                  {!readOnly && (
+                    <button onClick={()=>removeTurno(ti)} style={{ background:"none", border:"none", color:C.textMuted, fontSize:16, cursor:"pointer", padding:"4px 6px" }}>✕</button>
+                  )}
+                </div>
+              ))}
+            </>
+          )}
+
+          {!readOnly && (
+            <button onClick={addTurno} style={{ background:"none", border:`1px dashed ${C.border}`, borderRadius:6, color:C.textMuted, fontSize:11, padding:"5px 12px", cursor:"pointer", fontFamily:"Barlow", width:"100%" }}>
+              + Aggiungi turno
+            </button>
+          )}
+
+          {turni.length > 0 && (
+            <>
+              <label style={{ display:"flex", alignItems:"center", gap:8, fontSize:13, color:C.textDim, marginTop:12, marginBottom:6, cursor: readOnly ? "default" : "pointer" }}>
+                <input type="checkbox" checked={permesso.attivo} disabled={readOnly} onChange={e => {
+                  const checked = e.target.checked;
+                  setPermesso(p => checked ? { ...p, attivo: true } : { attivo: false, da: "", a: "" });
+                }} />
+                Permesso orario
+              </label>
+              {permesso.attivo && (
+                <div style={{ display:"flex", gap:6, alignItems:"center", paddingLeft:26, marginBottom:8 }}>
+                  <Inp type="time" value={permesso.da} disabled={readOnly} step={900} onChange={e=>setPermesso(p=>({...p, da:e.target.value}))} style={{ flex:1, marginBottom:0 }} />
+                  <span style={{ color:C.textMuted, fontSize:13 }}>→</span>
+                  <Inp type="time" value={permesso.a} disabled={readOnly} step={900} onChange={e=>setPermesso(p=>({...p, a:e.target.value}))} style={{ flex:1, marginBottom:0 }} />
+                </div>
+              )}
+
+              {/* Banner validazione live */}
+              {(() => {
+                if (oreInfo.errore) {
+                  return (
+                    <div style={{ padding:"10px 12px", background:C.redDim, border:`1px solid ${C.red}50`, borderRadius:8, fontSize:12, color:C.red, marginTop:8, fontWeight:600 }}>
+                      {oreInfo.errore}
+                    </div>
+                  );
+                }
+                const ok = oreInfo.diffMin === 0;
+                let msg = `Lavorazioni: ${fmtMinAsOreIT(oreInfo.lavMin)} · Turni netti: ${fmtMinAsOreIT(oreInfo.netMin)}`;
+                if (ok) msg += " ✓";
+                else if (oreInfo.diffMin < 0) msg += ` · Mancano ${fmtMinAsOreIT(-oreInfo.diffMin)}`;
+                else msg += ` · ${fmtMinAsOreIT(oreInfo.diffMin)} in più`;
+                return (
+                  <div style={{ padding:"10px 12px", background: ok ? C.greenDim : C.redDim, border:`1px solid ${ok ? C.green : C.red}50`, borderRadius:8, fontSize:12, color: ok ? C.green : C.red, marginTop:8, fontWeight:600 }}>
+                    {msg}
+                  </div>
+                );
+              })()}
+            </>
+          )}
+        </div>
+      </div>
 
       {/* Blocks cantiere */}
       {blocks.map((b,bi) => (
