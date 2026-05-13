@@ -23,6 +23,23 @@ import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 import InstallAppBanner from "./components/InstallAppBanner";
 
+// ─── Helper: parsing ore in formato italiano (virgola o punto) ───────────────
+// "0,5" -> 0.5 | "1.5" -> 1.5 | "" -> "" | invalido -> ""
+// Allineato a src/lib/numUtils.ts dell'ERP (parseNum semplificato per il caso ore)
+function parseOreIT(raw) {
+  if (typeof raw === "number") return raw;
+  const s = String(raw ?? "").trim().replace(",", ".");
+  if (s === "") return "";
+  const n = parseFloat(s);
+  return isNaN(n) ? "" : n;
+}
+
+// Formatta ore per display nell'input (mostra virgola decimale per UX IT)
+function fmtOreIT(n) {
+  if (n === "" || n === null || n === undefined || n === 0) return "";
+  return String(n).replace(".", ",");
+}
+
 // ─── DESIGN SYSTEM ────────────────────────────────────────────────────────────
 // Palette importata da theme.js — default dark per retrocompatibilità
 import { themes } from "./theme";
@@ -104,11 +121,12 @@ function Card({ children, style={}, onClick }) {
     style={{ background:C.card, borderRadius:16, border:`1px solid ${C.border}`, padding:18, marginBottom:10, cursor:onClick?"pointer":"default", transition:"transform 0.15s, box-shadow 0.15s", transform:hov?"scale(1.01)":"none", boxShadow:hov?`0 4px 20px ${C.border}60`:"none", ...style }}>{children}</div>;
 }
 
-function Inp({ placeholder, value, onChange, type="text", style={} }) {
+function Inp({ placeholder, value, onChange, type="text", inputMode, onBlur, style={} }) {
   const { C, theme } = useTheme();
   const [focused, setFocused] = useState(false);
-  return <input type={type} placeholder={placeholder} value={value} onChange={onChange}
-    onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
+  return <input type={type} inputMode={inputMode} placeholder={placeholder} value={value} onChange={onChange}
+    onFocus={()=>setFocused(true)}
+    onBlur={(e)=>{ setFocused(false); if (onBlur) onBlur(e); }}
     style={{ width:"100%", boxSizing:"border-box", background:theme==="dark"?`${C.mid}40`:C.surface, border:`1.5px solid ${focused?C.accent:C.border}`, borderRadius:10, color:C.text, padding:"12px 14px", fontSize:14, outline:"none", fontFamily:"Barlow,sans-serif", marginBottom:10, transition:"border-color 0.15s", ...style }} />;
 }
 
@@ -1995,14 +2013,20 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
   const addBlock = () => setBlocks(prev => [...prev, { projectId:"", projectName:"", lavorazioni:[{ taskId:"", taskName:"", categoria:"", ore:0, nota:"" }] }]);
   const removeBlock = (bi) => setBlocks(prev => prev.filter((_,i)=>i!==bi));
 
-  const canSave = blocks.every(b => b.projectId && b.lavorazioni.every(l=>l.taskId&&l.ore>0));
+  const canSave = blocks.every(b => b.projectId && b.lavorazioni.every(l=>{
+    const n = parseOreIT(l.ore);
+    return l.taskId && typeof n === "number" && n > 0;
+  }));
 
   const save = async (submitted = false) => {
     if (!canSave) return;
     setSaving(true);
     try {
       const allLavs = blocks.flatMap(b => b.lavorazioni.map(l=>({ ...l, projectId:b.projectId, projectName:b.projectName })));
-      const totaleOre = allLavs.reduce((s,l)=>s+Number(l.ore),0);
+      const totaleOre = allLavs.reduce((s,l)=>{
+        const n = parseOreIT(l.ore);
+        return s + (typeof n === "number" ? n : 0);
+      },0);
       const firstBlock = blocks[0];
       const data = {
         workerId: user.uid,
@@ -2137,7 +2161,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
                         tasks={tasks}
                       />
                     </div>
-                    <Inp type="number" placeholder="ore" value={l.ore||""} onChange={e=>updLav(bi,li,"ore",Number(e.target.value))} style={{ width:70, marginBottom:0 }} />
+                    <Inp type="text" inputMode="decimal" placeholder="ore" value={fmtOreIT(l.ore)} onChange={e=>updLav(bi,li,"ore",e.target.value)} onBlur={e=>updLav(bi,li,"ore",parseOreIT(e.target.value))} style={{ width:70, marginBottom:0 }} />
                     {b.lavorazioni.length>1 && (
                       <button onClick={()=>removeLav(bi,li)} style={{ background:"none", border:"none", color:C.textMuted, fontSize:16, cursor:"pointer" }}>✕</button>
                     )}
