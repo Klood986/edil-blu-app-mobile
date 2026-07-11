@@ -254,7 +254,7 @@ function Modal({ title, onClose, children }) {
           <div style={{ fontWeight:700, fontSize:18, fontFamily:"Barlow Condensed" }}>{title}</div>
           <button onClick={onClose} style={{ background:"none", border:"none", color:C.textMuted, cursor:"pointer", padding:4, display:"flex" }}><X size={20} /></button>
         </div>
-        <div style={{ flex:"1 1 auto", overflowY:"auto", WebkitOverflowScrolling:"touch", overscrollBehavior:"contain", minHeight:0, padding:"16px 20px 24px" }}>
+        <div style={{ flex:"1 1 auto", overflowY:"auto", WebkitOverflowScrolling:"touch", overscrollBehavior:"contain", minHeight:0, padding:"16px 20px calc(24px + env(safe-area-inset-bottom))" }}>
           {children}
         </div>
       </div>
@@ -1961,6 +1961,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
   const canDelete = rapportinoDaModificare?.id && (!rapportinoDaModificare.status || rapportinoDaModificare.status === "draft");
   const [cantieri, setCantieri] = useState([]);
   const [tasks, setTasks] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
   const [date, setDate] = useState(() => {
     if (rapportinoDaModificare?.date) {
       const d = rapportinoDaModificare.date;
@@ -2015,10 +2016,14 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
   const [categorieOperaio, setCategorieOperaio] = useState([]);
 
   useEffect(() => {
-    getDocs(query(collection(db,"projects"),orderBy("name"))).then(s => setCantieri(s.docs.filter(d=>d.data().status==="active"||d.data().status==="draft").map(d=>({id:d.id,...d.data()}))));
-    getDocs(query(collection(db,"timesheet_tasks"),orderBy("categoria"))).then(s => {
-      setTasks(s.docs.filter(d=>d.data().attivo!==false).map(d=>({id:d.id,...d.data()})));
-    });
+    let done = 0;
+    const mark = () => { done += 1; if (done >= 2) setLoadingData(false); };
+    getDocs(query(collection(db,"projects"),orderBy("name")))
+      .then(s => setCantieri(s.docs.filter(d=>d.data().status==="active"||d.data().status==="draft").map(d=>({id:d.id,...d.data()}))))
+      .finally(mark);
+    getDocs(query(collection(db,"timesheet_tasks"),orderBy("categoria")))
+      .then(s => setTasks(s.docs.filter(d=>d.data().attivo!==false).map(d=>({id:d.id,...d.data()}))))
+      .finally(mark);
     getDocs(query(collection(db, "parco_mezzi"), orderBy("targa")))
       .then(s => setMezzi(s.docs.map(d => ({ id: d.id, ...d.data() }))))
       .catch(() => setMezzi([]));
@@ -2331,7 +2336,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
                   <span style={{ color:C.textMuted, fontSize:13 }}>→</span>
                   <Inp type="time" value={t.fine} disabled={readOnly} step={900} onChange={e=>updTurno(ti,"fine",e.target.value)} style={{ flex:1, marginBottom:0 }} />
                   {!readOnly && (
-                    <button onClick={()=>removeTurno(ti)} style={{ background:"none", border:"none", color:C.textMuted, fontSize:16, cursor:"pointer", padding:"4px 6px" }}>✕</button>
+                    <button onClick={()=>removeTurno(ti)} style={{ background:"none", border:"none", color:C.textMuted, fontSize:16, cursor:"pointer", minWidth:44, minHeight:44, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>✕</button>
                   )}
                 </div>
               ))}
@@ -2339,7 +2344,7 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
           )}
 
           {!readOnly && (
-            <button onClick={addTurno} style={{ background:"none", border:`1px dashed ${C.border}`, borderRadius:6, color:C.textMuted, fontSize:11, padding:"5px 12px", cursor:"pointer", fontFamily:"Barlow", width:"100%" }}>
+            <button onClick={addTurno} style={{ background:"none", border:`1px dashed ${C.border}`, borderRadius:6, color:C.textMuted, fontSize:11, padding:"12px", minHeight:44, boxSizing:"border-box", cursor:"pointer", fontFamily:"Barlow", width:"100%" }}>
               + Aggiungi turno
             </button>
           )}
@@ -2396,10 +2401,11 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
               onChange={(v)=>updBlock(bi,"projectId",v)}
               options={cantiereOptions}
               searchable
-              placeholder="Seleziona cantiere..."
+              disabled={loadingData}
+              placeholder={loadingData ? "Caricamento..." : "Seleziona cantiere..."}
             />
             {blocks.length>1 && (
-              <button onClick={()=>removeBlock(bi)} style={{ background:"none", border:"none", color:C.red, fontSize:11, cursor:"pointer", fontFamily:"Barlow" }}>Rimuovi cantiere</button>
+              <button onClick={()=>removeBlock(bi)} style={{ background:"none", border:"none", color:C.red, fontSize:11, cursor:"pointer", fontFamily:"Barlow", minHeight:44, padding:"10px 4px", display:"inline-flex", alignItems:"center" }}>Rimuovi cantiere</button>
             )}
           </div>
           <div style={{ padding:"10px 12px" }}>
@@ -2416,12 +2422,13 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
                         onChange={(taskId) => updLav(bi, li, "taskId", taskId)}
                         options={lavOptions}
                         searchable
-                        placeholder="Seleziona lavorazione..."
+                        disabled={loadingData}
+                        placeholder={loadingData ? "Caricamento..." : "Seleziona lavorazione..."}
                       />
                     </div>
                     <Inp type="text" inputMode="decimal" placeholder="ore" value={fmtOreIT(l.ore)} onChange={e=>updLav(bi,li,"ore",e.target.value)} onBlur={e=>updLav(bi,li,"ore",parseOreIT(e.target.value))} style={{ width:70, marginBottom:0 }} />
                     {b.lavorazioni.length>1 && (
-                      <button onClick={()=>removeLav(bi,li)} style={{ background:"none", border:"none", color:C.textMuted, fontSize:16, cursor:"pointer" }}>✕</button>
+                      <button onClick={()=>removeLav(bi,li)} style={{ background:"none", border:"none", color:C.textMuted, fontSize:16, cursor:"pointer", minWidth:44, minHeight:44, display:"flex", alignItems:"center", justifyContent:"center", flexShrink:0 }}>✕</button>
                     )}
                   </div>
                   {!readOnly && (
@@ -2442,14 +2449,14 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
                 </div>
               );
             })}
-            <button onClick={()=>addLav(bi)} style={{ background:"none", border:`1px dashed ${C.border}`, borderRadius:6, color:C.textMuted, fontSize:11, padding:"5px 12px", cursor:"pointer", fontFamily:"Barlow", width:"100%" }}>
+            <button onClick={()=>addLav(bi)} style={{ background:"none", border:`1px dashed ${C.border}`, borderRadius:6, color:C.textMuted, fontSize:11, padding:"12px", minHeight:44, boxSizing:"border-box", cursor:"pointer", fontFamily:"Barlow", width:"100%" }}>
               + Aggiungi lavorazione
             </button>
           </div>
         </div>
       ))}
 
-      <button onClick={addBlock} style={{ width:"100%", padding:"11px", background:`${C.accent}10`, border:`1.5px dashed ${C.accent}`, borderRadius:10, color:C.accent, fontSize:13, fontWeight:600, fontFamily:"inherit", cursor:"pointer", transition:"all 0.15s", marginBottom:10 }}>
+      <button onClick={addBlock} style={{ width:"100%", padding:"13px", minHeight:44, boxSizing:"border-box", background:`${C.accent}10`, border:`1.5px dashed ${C.accent}`, borderRadius:10, color:C.accent, fontSize:13, fontWeight:600, fontFamily:"inherit", cursor:"pointer", transition:"all 0.15s", marginBottom:10 }}>
         + Aggiungi cantiere
       </button>
 
@@ -3796,7 +3803,7 @@ function NotificheCampana({ user }) {
 
       {open && (
         <div style={{ position:"fixed", inset:0, zIndex:400 }} onClick={()=>setOpen(false)}>
-          <div style={{ position:"absolute", top:56, right:16, width:300, maxHeight:400, overflowY:"auto", background:C.surface, border:`1px solid ${C.border}`, borderRadius:14, boxShadow:`0 8px 32px rgba(0,0,0,0.5)` }} onClick={e=>e.stopPropagation()}>
+          <div style={{ position:"absolute", top:56, right:16, width:"min(300px, calc(100vw - 32px))", maxHeight:400, overflowY:"auto", background:C.surface, border:`1px solid ${C.border}`, borderRadius:14, boxShadow:`0 8px 32px rgba(0,0,0,0.5)` }} onClick={e=>e.stopPropagation()}>
             <div style={{ padding:"14px 16px 10px", display:"flex", justifyContent:"space-between", alignItems:"center", borderBottom:`1px solid ${C.border}` }}>
               <div style={{ fontWeight:800, fontSize:14, fontFamily:"Barlow Condensed" }}>Notifiche</div>
               {nonLette > 0 && (
@@ -5598,7 +5605,7 @@ export default function App() {
         <div style={{ display:"flex", alignItems:"center", gap:8 }}>
           <NotificheCampana user={user} />
           <Avatar name={user.nome} role={user.ruolo} size={32} />
-          <button onClick={()=>signOut(auth)} style={{ background:"none", border:"none", color:C.textMuted, fontSize:18, cursor:"pointer" }}>⏏</button>
+          <button onClick={()=>signOut(auth)} style={{ background:"none", border:"none", color:C.textMuted, fontSize:18, cursor:"pointer", minWidth:44, minHeight:44, display:"flex", alignItems:"center", justifyContent:"center" }}>⏏</button>
         </div>
       </div>
 
@@ -5621,7 +5628,7 @@ export default function App() {
       {/* Menu Altro — Bottom Sheet */}
       {altroOpen && (
         <div style={{ position:"fixed", inset:0, zIndex:300, background:"rgba(0,0,0,0.5)", backdropFilter:"blur(3px)" }} onClick={()=>setAltroOpen(false)}>
-          <div style={{ position:"absolute", bottom:0, left:0, right:0, background:C.surface, borderTopLeftRadius:20, borderTopRightRadius:20, padding:"12px 16px 24px", maxWidth:480, margin:"0 auto", animation:"slideUp 0.25s ease" }} onClick={e=>e.stopPropagation()}>
+          <div style={{ position:"absolute", bottom:0, left:0, right:0, background:C.surface, borderTopLeftRadius:20, borderTopRightRadius:20, padding:"12px 16px calc(24px + env(safe-area-inset-bottom))", maxWidth:480, margin:"0 auto", animation:"slideUp 0.25s ease" }} onClick={e=>e.stopPropagation()}>
             <div style={{ width:40, height:4, background:C.border, borderRadius:2, margin:"0 auto 16px" }} />
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
               {altroItems.map(item => {
