@@ -5482,15 +5482,27 @@ function formatNomeCantiere(project) {
   return project.name || project.clientName || "Cantiere";
 }
 
+// Intento deep-link Klod: se l'URL ha ?s=klod lo memorizza in sessionStorage
+// (persiste attraverso login/reload che rimuovono la query); resta true finché
+// non viene consumato. Tutto in try/catch → false in caso di ambienti limitati.
+function wantsKlodDeepLink() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("s") === "klod") {
+      sessionStorage.setItem("klodDeepLink", "1");
+      return true;
+    }
+    return sessionStorage.getItem("klodDeepLink") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function App() {
   const { C } = useTheme();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [section, setSection] = useState(() => {
-    try {
-      return new URLSearchParams(window.location.search).get("s") === "klod" ? "klod" : "dashboard";
-    } catch { return "dashboard"; }
-  });
+  const [section, setSection] = useState(() => wantsKlodDeepLink() ? "klod" : "dashboard");
   const [altroOpen, setAltroOpen] = useState(false);
   const [appuntiCantiere, setAppuntiCantiere] = useState(null);
   const [misuratoreProgetto, setMisuratoreProgetto] = useState(null);
@@ -5524,6 +5536,21 @@ export default function App() {
     });
     return unsub;
   }, []);
+
+  // Deep-link Klod resistente a login/reload: quando l'utente è pronto, vince
+  // sul reset della section fatto dal flusso auth, poi CONSUMA l'intento
+  // (rimuove il flag + toglie ?s=klod dall'URL) → vale una volta per lancio.
+  useEffect(() => {
+    if (!user) return;
+    if (!wantsKlodDeepLink()) return;
+    setSection("klod");
+    try {
+      sessionStorage.removeItem("klodDeepLink");
+      const url = new URL(window.location.href);
+      url.searchParams.delete("s");
+      window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+    } catch {}
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
