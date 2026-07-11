@@ -5,8 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>Klod</title>
   <link rel="manifest" href="/klod/manifest.json" />
-  <!-- Fallback: nessuna icona in public/klod/, si usa quella dell'app (192px) -->
-  <link rel="apple-touch-icon" href="/logo192.png" />
+  <link rel="apple-touch-icon" href="/klod/icon-180.png" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Klod" />
@@ -27,10 +26,8 @@
       padding: 32px 24px calc(32px + env(safe-area-inset-bottom));
     }
     .logo {
-      width: 72px; height: 72px; border-radius: 18px;
-      background: linear-gradient(135deg, #1d5fa8, #4facde);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 36px; margin-bottom: 20px;
+      width: 96px; height: 96px; border-radius: 22px;
+      margin-bottom: 20px; display: block;
     }
     h1 { font-size: 30px; font-weight: 800; letter-spacing: 0.5px; margin: 0 0 6px; }
     .subtitle { font-size: 15px; color: #8baac8; margin: 0 0 32px; }
@@ -49,7 +46,7 @@
   </style>
 </head>
 <body>
-  <div class="logo">🎙️</div>
+  <img class="logo" src="/klod/icon-192.png" alt="Klod" />
   <h1>Klod</h1>
   <p class="subtitle">Segretario vocale Edil Blu</p>
   <a class="cta" href="/?s=klod">Apri Klod</a>
