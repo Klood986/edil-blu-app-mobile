@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Klod</title>
+  <link rel="manifest" href="/klod/manifest.json" />
+  <!-- Fallback: nessuna icona in public/klod/, si usa quella dell'app (192px) -->
+  <link rel="apple-touch-icon" href="/logo192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Klod" />
+  <meta name="theme-color" content="#070f1e" />
+  <style>
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      min-height: 100vh;
+      background: #070f1e;
+      color: #e8f0fe;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 32px 24px calc(32px + env(safe-area-inset-bottom));
+    }
+    .logo {
+      width: 72px; height: 72px; border-radius: 18px;
+      background: linear-gradient(135deg, #1d5fa8, #4facde);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 36px; margin-bottom: 20px;
+    }
+    h1 { font-size: 30px; font-weight: 800; letter-spacing: 0.5px; margin: 0 0 6px; }
+    .subtitle { font-size: 15px; color: #8baac8; margin: 0 0 32px; }
+    a.cta {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-height: 48px; padding: 14px 32px;
+      background: #4facde; color: #051020;
+      font-size: 17px; font-weight: 700; text-decoration: none;
+      border-radius: 12px; width: 100%; max-width: 320px;
+    }
+    a.cta:active { opacity: 0.85; }
+    .hint {
+      font-size: 12px; color: #4a6a8a; margin-top: 22px;
+      line-height: 1.5; max-width: 300px;
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">🎙️</div>
+  <h1>Klod</h1>
+  <p class="subtitle">Segretario vocale Edil Blu</p>
+  <a class="cta" href="/?s=klod">Apri Klod</a>
+  <p class="hint">Per l'icona in Home: tasto Condividi, poi Aggiungi alla schermata Home.</p>
+  <script>
+    // Se avviata come app installata, salta la pagina d'ingresso e vai diretto.
+    // In navigazione normale NESSUN redirect: serve per aggiungere alla Home.
+    (function () {
+      try {
+        var standalone = (window.navigator && window.navigator.standalone === true) ||
+          (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+        if (standalone) location.replace('/?s=klod');
+      } catch (e) {}
+    })();
+  </script>
+</body>
+</html>

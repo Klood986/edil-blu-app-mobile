@@ -5486,7 +5486,11 @@ export default function App() {
   const { C } = useTheme();
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [section, setSection] = useState("dashboard");
+  const [section, setSection] = useState(() => {
+    try {
+      return new URLSearchParams(window.location.search).get("s") === "klod" ? "klod" : "dashboard";
+    } catch { return "dashboard"; }
+  });
   const [altroOpen, setAltroOpen] = useState(false);
   const [appuntiCantiere, setAppuntiCantiere] = useState(null);
   const [misuratoreProgetto, setMisuratoreProgetto] = useState(null);

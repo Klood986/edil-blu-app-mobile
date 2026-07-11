@@ -1,0 +1,21 @@
+{
+  "name": "Klod",
+  "short_name": "Klod",
+  "start_url": "/?s=klod",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#070f1e",
+  "theme_color": "#070f1e",
+  "icons": [
+    {
+      "src": "/logo192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/logo512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}
