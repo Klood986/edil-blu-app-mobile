@@ -29,6 +29,8 @@ export default function MobileSelect({ label, value, options = [], onChange, sea
   const [kbFocus, setKbFocus] = useState(false); // ricerca a fuoco (tastiera)
   const [vvRect, setVvRect] = useState(null);     // geometria visualViewport in modalità tastiera
   const listRef = useRef(null);
+  const searchInputRef = useRef(null);
+  const blurTimerRef = useRef(null);
 
   const hasVV = typeof window !== "undefined" && !!window.visualViewport;
 
@@ -92,7 +94,13 @@ export default function MobileSelect({ label, value, options = [], onChange, sea
     if (listRef.current) listRef.current.scrollTop = 0;
   }, [search]);
 
+  // ─── Cleanup del timer di blur deferito su unmount ────────────────────────
+  useEffect(() => () => {
+    if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+  }, []);
+
   const close = () => {
+    if (blurTimerRef.current) { clearTimeout(blurTimerRef.current); blurTimerRef.current = null; }
     setOpen(false);
     setSearch("");
     setKbFocus(false);
@@ -214,7 +222,11 @@ export default function MobileSelect({ label, value, options = [], onChange, sea
       onClick={close}
       style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(3px)" }}
     >
-      <div onClick={e => e.stopPropagation()} style={panelStyle}>
+      <div
+        onClick={e => e.stopPropagation()}
+        onMouseDown={e => { if (e.target !== searchInputRef.current) e.preventDefault(); }}
+        style={panelStyle}
+      >
         {/* Maniglia di trascinamento (visiva) */}
         <div style={{ flexShrink: 0, padding: "10px 0 4px", display: "flex", justifyContent: "center", cursor: "pointer" }} onClick={close}>
           <div style={{ width: 40, height: 4, background: C.border, borderRadius: 2 }} />
@@ -230,11 +242,26 @@ export default function MobileSelect({ label, value, options = [], onChange, sea
             <div style={{ display: "flex", alignItems: "center", gap: 8, background: C.bg, border: `1.5px solid ${C.borderLight}`, borderRadius: 9, padding: "9px 12px" }}>
               <Search size={15} color={C.textMuted} />
               <input
+                ref={searchInputRef}
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                onFocus={() => setKbFocus(true)}
-                onBlur={() => { setKbFocus(false); setVvRect(null); }}
+                onFocus={() => {
+                  if (blurTimerRef.current) { clearTimeout(blurTimerRef.current); blurTimerRef.current = null; }
+                  setKbFocus(true);
+                }}
+                onBlur={() => {
+                  // Blur deferito: il tap su una voce fa blur PRIMA del click.
+                  // Aspetta ~150ms; collassa solo se il pannello è ancora aperto
+                  // (input montato) e l'input non ha ripreso il fuoco.
+                  if (blurTimerRef.current) clearTimeout(blurTimerRef.current);
+                  blurTimerRef.current = setTimeout(() => {
+                    blurTimerRef.current = null;
+                    if (!searchInputRef.current || document.activeElement === searchInputRef.current) return;
+                    setKbFocus(false);
+                    setVvRect(null);
+                  }, 150);
+                }}
                 placeholder="Cerca..."
                 style={{ flex: 1, border: "none", background: "transparent", outline: "none", color: C.text, fontSize: 15, fontFamily: "Barlow,sans-serif" }}
               />
