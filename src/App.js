@@ -23,6 +23,7 @@ import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } 
 import { CSS } from "@dnd-kit/utilities";
 import InstallAppBanner from "./components/InstallAppBanner";
 import RecorderKlod from "./components/RecorderKlod";
+import MobileSelect from "./components/MobileSelect";
 
 // ─── Helper: parsing ore in formato italiano (virgola o punto) ───────────────
 // "0,5" -> 0.5 | "1.5" -> 1.5 | "" -> "" | invalido -> ""
@@ -2081,6 +2082,27 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
     return { prioList, stessaCat, altre };
   }, [tasks, taskPrioritarie, categorieOperaio]);
 
+  // Opzioni per i MobileSelect (bottom-sheet). Cantieri: comune/indirizzo come sub.
+  const cantiereOptions = useMemo(() => cantieri.map(c => ({
+    value: c.id,
+    label: formatNomeCantiere(c),
+    sub: [c.comune, c.indirizzo].filter(Boolean).join(" · ") || undefined,
+  })), [cantieri]);
+
+  // Lavorazioni: opzioni GIÀ ORDINATE (Consigliate → Stessa categoria → Altre),
+  // stesse etichette dei gruppi di LavorazioneSelect; fallback per categoria.
+  const lavOptions = useMemo(() => {
+    const opt = (t, group) => ({ value: t.id, label: t.nome || t.name || "", group });
+    if (gruppiTask) {
+      return [
+        ...gruppiTask.prioList.map(t => opt(t, "⭐ Consigliate per te")),
+        ...gruppiTask.stessaCat.map(t => opt(t, "Stessa categoria")),
+        ...gruppiTask.altre.map(t => opt(t, "Altre")),
+      ];
+    }
+    return categorie.flatMap(cat => tasks.filter(t => t.categoria === cat).map(t => opt(t, cat)));
+  }, [gruppiTask, categorie, tasks]);
+
   const updBlock = (bi, field, val) => setBlocks(prev => prev.map((b,i) => {
     if (i!==bi) return b;
     if (field==="projectId") {
@@ -2369,10 +2391,13 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
         <div key={bi} style={{ border:`1px solid ${C.border}`, borderRadius:10, marginBottom:10, overflow:"hidden" }}>
           <div style={{ background:`${C.mid}40`, padding:"10px 12px", borderBottom:`1px solid ${C.border}` }}>
             <div style={{ fontSize:10, color:C.accent, fontWeight:700, letterSpacing:1, marginBottom:6 }}>CANTIERE {blocks.length>1?bi+1:""}</div>
-            <Sel value={b.projectId} onChange={e=>updBlock(bi,"projectId",e.target.value)}>
-              <option value="">Seleziona cantiere...</option>
-              {cantieri.map(c=><option key={c.id} value={c.id}>{formatNomeCantiere(c)}{c.comune ? " · "+c.comune : ""}</option>)}
-            </Sel>
+            <MobileSelect
+              value={b.projectId}
+              onChange={(v)=>updBlock(bi,"projectId",v)}
+              options={cantiereOptions}
+              searchable
+              placeholder="Seleziona cantiere..."
+            />
             {blocks.length>1 && (
               <button onClick={()=>removeBlock(bi)} style={{ background:"none", border:"none", color:C.red, fontSize:11, cursor:"pointer", fontFamily:"Barlow" }}>Rimuovi cantiere</button>
             )}
@@ -2386,12 +2411,12 @@ function FormRapportino({ user, onSaved, onClose, rapportinoDaModificare }) {
                 <div key={li} style={{ marginBottom:10 }}>
                   <div style={{ display:"flex", gap:6, alignItems:"center" }}>
                     <div style={{ flex:1 }}>
-                      <LavorazioneSelect
+                      <MobileSelect
                         value={l.taskId}
                         onChange={(taskId) => updLav(bi, li, "taskId", taskId)}
-                        gruppiTask={gruppiTask}
-                        categorie={categorie}
-                        tasks={tasks}
+                        options={lavOptions}
+                        searchable
+                        placeholder="Seleziona lavorazione..."
                       />
                     </div>
                     <Inp type="text" inputMode="decimal" placeholder="ore" value={fmtOreIT(l.ore)} onChange={e=>updLav(bi,li,"ore",e.target.value)} onBlur={e=>updLav(bi,li,"ore",parseOreIT(e.target.value))} style={{ width:70, marginBottom:0 }} />
