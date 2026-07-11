@@ -17,11 +17,12 @@ import { Home, HardHat, MessageCircle, User, Menu as MenuIcon,
          ChevronLeft, X, Plus, ChevronDown, Inbox,
          Plane, Activity, Sun, Moon, LogOut,
          UserPlus, Copy, Check, AlertCircle, Eye, EyeOff, Shield,
-         ChevronRight, GripVertical, Trash2, Save, RefreshCw, Search } from "lucide-react";
+         ChevronRight, GripVertical, Trash2, Save, RefreshCw, Search, Mic } from "lucide-react";
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import InstallAppBanner from "./components/InstallAppBanner";
+import RecorderKlod from "./components/RecorderKlod";
 
 // ─── Helper: parsing ore in formato italiano (virgola o punto) ───────────────
 // "0,5" -> 0.5 | "1.5" -> 1.5 | "" -> "" | invalido -> ""
@@ -5549,11 +5550,12 @@ export default function App() {
       { id:"misuratore_hub", icon:Ruler,           label:"Misuratore" },
       { id:"regolamento",    icon:FileText,         label:"Regolamento" },
     ]),
+    ...(user.ruolo === "admin" ? [{ id:"klod", icon:Mic, label:"Klod" }] : []),
     ...(isManager(user.ruolo)?[{ id:"gestione", icon:Settings, label:"Gestione" }]:[]),
     { id:"impostazioni", icon:Settings, label:"Impostazioni" },
   ];
 
-  const titles = { dashboard:"Dashboard", cantieri:"Cantieri", chat:"Chat", personale:"Area Personale", cronoprogramma:"Cronoprogramma", procedure:"Procedure", regolamento:"Regolamento", gestione:"Gestione", appunti_hub:"Appunti cantiere", misuratore_hub:"Misuratore", impostazioni:"Impostazioni" };
+  const titles = { dashboard:"Dashboard", cantieri:"Cantieri", chat:"Chat", personale:"Area Personale", cronoprogramma:"Cronoprogramma", procedure:"Procedure", regolamento:"Regolamento", gestione:"Gestione", appunti_hub:"Appunti cantiere", misuratore_hub:"Misuratore", klod:"Klod", impostazioni:"Impostazioni" };
 
   return (
     <div style={{ height:"100dvh", width:"100%", background:C.bg, color:C.text, fontFamily:"Barlow,sans-serif", maxWidth:480, margin:"0 auto", display:"flex", flexDirection:"column", overflow:"hidden", position:"relative" }}>
@@ -5588,6 +5590,7 @@ export default function App() {
       {section==="appunti_hub"    && appuntiCantiere && <AppuntiCantiere user={user} projectId={appuntiCantiere.id} projectName={appuntiCantiere.clientName||appuntiCantiere.name} onBack={() => setAppuntiCantiere(null)} />}
       {section==="misuratore_hub" && !misuratoreProgetto && <MisuratoreHub user={user} onSelect={p => setMisuratoreProgetto(p)} />}
       {section==="misuratore_hub" && misuratoreProgetto && <MisuratoreDisegno user={user} projectId={misuratoreProgetto.id} projectName={misuratoreProgetto.clientName||misuratoreProgetto.name} onBack={() => setMisuratoreProgetto(null)} />}
+      {section==="klod"           && <RecorderKlod user={user} />}
       {section==="impostazioni"  && <Impostazioni user={user} />}
 
       {/* Menu Altro — Bottom Sheet */}
